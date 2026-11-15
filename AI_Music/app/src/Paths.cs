@@ -72,6 +72,11 @@ namespace AIMusicGenerator
             get { return Path.Combine(Path.GetTempPath(), "AIMusicGenerator"); }
         }
 
+        public static string CoverFile
+        {
+            get { return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "cover.png"); }
+        }
+
         public static string Quote(string value)
         {
             StringBuilder builder = new StringBuilder();

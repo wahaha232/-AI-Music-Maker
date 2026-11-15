@@ -16,6 +16,7 @@ import gc
 import json
 import os
 import shutil
+import re
 import sys
 import tempfile
 import time
@@ -44,6 +45,12 @@ DEFAULTS = {
     "inference_steps": 8,
     "guidance_scale": 1.0,
     "seed": -1,
+    "lm_negative_prompt": "",
+    "fade_in_duration": 0.0,
+    "fade_out_duration": 0.0,
+    "mp3_bitrate": "128k",
+    "mp3_sample_rate": 48000,
+    "shift": 1.0,
     "output_dir": str(DEFAULT_OUT),
     "filename_prefix": "ace",
     "audio_format": "wav",
@@ -73,6 +80,9 @@ def bootstrap() -> None:
     os.environ["PYTHONIOENCODING"] = "utf-8"
     for var in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"):
         os.environ.pop(var, None)
+    ffmpeg_dir = BASE_DIR / "tools" / "ffmpeg" / "bin"
+    if ffmpeg_dir.is_dir():
+        os.environ["PATH"] = str(ffmpeg_dir) + os.pathsep + os.environ.get("PATH", "")
     if str(REPO_DIR) not in sys.path:
         sys.path.insert(0, str(REPO_DIR))
 
@@ -85,15 +95,15 @@ def normalize_config(data: dict) -> dict:
     if not caption:
         raise ValueError("caption 不可為空")
     duration = float(cfg["duration"])
-    if not 5.0 <= duration <= 600.0:
-        raise ValueError("duration 必須介於 5 到 600 秒")
+    if not 10.0 <= duration <= 600.0:
+        raise ValueError("duration 必須介於 10 到 600 秒")
     raw_bpm = cfg.get("bpm")
     if raw_bpm in (None, "", "auto", "Auto"):
         bpm = None
     else:
         bpm = int(raw_bpm)
-        if not 20 <= bpm <= 300:
-            raise ValueError("bpm 必須介於 20 到 300，或留空自動")
+        if not 30 <= bpm <= 300:
+            raise ValueError("bpm 必須介於 30 到 300，或留空自動")
     steps = int(cfg["inference_steps"])
     if not 1 <= steps <= 100:
         raise ValueError("inference_steps 必須介於 1 到 100")
@@ -107,6 +117,20 @@ def normalize_config(data: dict) -> dict:
     audio_format = str(cfg.get("audio_format") or "wav").lower()
     if audio_format not in ("wav", "flac", "mp3", "wav32", "opus", "aac"):
         raise ValueError("不支援的 audio_format")
+    negative_prompt = str(cfg.get("lm_negative_prompt") or "").strip()
+    fade_in = float(cfg.get("fade_in_duration") or 0.0)
+    fade_out = float(cfg.get("fade_out_duration") or 0.0)
+    if not 0.0 <= fade_in <= 30.0 or not 0.0 <= fade_out <= 30.0:
+        raise ValueError("fade 秒數必須介於 0 到 30")
+    mp3_bitrate = str(cfg.get("mp3_bitrate") or "128k").lower()
+    if mp3_bitrate not in ("128k", "192k", "256k", "320k"):
+        raise ValueError("不支援的 mp3_bitrate")
+    mp3_sample_rate = int(cfg.get("mp3_sample_rate") or 48000)
+    if mp3_sample_rate not in (44100, 48000):
+        raise ValueError("mp3_sample_rate 必須是 44100 或 48000")
+    shift = float(cfg.get("shift") or 1.0)
+    if not 0.5 <= shift <= 10.0:
+        raise ValueError("shift 必須介於 0.5 到 10")
     offload_mode = str(cfg.get("offload_mode") or "auto").lower()
     if offload_mode not in ("auto", "save_vram"):
         raise ValueError("offload_mode 必須是 auto 或 save_vram")
@@ -120,6 +144,12 @@ def normalize_config(data: dict) -> dict:
     cfg["guidance_scale"] = guidance
     cfg["audio_format"] = audio_format
     cfg["offload_mode"] = offload_mode
+    cfg["lm_negative_prompt"] = negative_prompt
+    cfg["fade_in_duration"] = fade_in
+    cfg["fade_out_duration"] = fade_out
+    cfg["mp3_bitrate"] = mp3_bitrate
+    cfg["mp3_sample_rate"] = mp3_sample_rate
+    cfg["shift"] = shift
     cfg["seed"] = int(cfg.get("seed", -1))
     out = Path(str(cfg["output_dir"])).expanduser()
     if not out.is_absolute():
@@ -257,11 +287,17 @@ def run_job(dit, llm, cfg: dict) -> int:
             duration=cfg["duration"],
             inference_steps=cfg["inference_steps"],
             guidance_scale=cfg["guidance_scale"],
+            lm_negative_prompt=cfg["lm_negative_prompt"],
+            fade_in_duration=cfg["fade_in_duration"],
+            fade_out_duration=cfg["fade_out_duration"],
+            shift=cfg["shift"],
             seed=seed,
         )
         config = GenerationConfig(
             batch_size=1,
             audio_format=cfg["audio_format"],
+            mp3_bitrate=cfg["mp3_bitrate"],
+            mp3_sample_rate=cfg["mp3_sample_rate"],
             use_random_seed=seed < 0,
             seeds=None if seed < 0 else [seed],
         )
@@ -400,6 +436,51 @@ def run_daemon(offload_mode: str = "auto") -> int:
         release_models(dit, llm)
 
 
+def run_album(album_path: Path) -> int:
+    data = json.loads(album_path.read_text(encoding="utf-8-sig"))
+    shared = data.get("shared") or {}
+    tracks = data.get("tracks") or []
+    if not tracks:
+        _emit("error", "album 沒有 tracks")
+        return 1
+    out_dir = Path(data.get("output_dir") or DEFAULT_OUT)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    dit = llm = None
+    files = []
+    try:
+        dit, llm = load_handlers(str(shared.get("offload_mode") or "auto"))
+        for index, track in enumerate(tracks, 1):
+            merged = dict(shared)
+            merged.update({k: v for k, v in track.items() if k != "title"})
+            cfg = normalize_config(merged)
+            cfg["caption"] = str(track.get("prompt") or cfg["caption"])
+            cfg["duration"] = float(track.get("duration") or cfg["duration"])
+            cfg["output_dir"] = str(out_dir)
+            title = str(track.get("title") or ("Track " + str(index)))
+            safe = re.sub(r"[^\w\-\u4e00-\u9fff]+", "_", title).strip("_") or ("track" + str(index))
+            cfg["filename_prefix"] = f"{index:02d}_{safe}"
+            _emit("album", f"{index}/{len(tracks)} {title}")
+            code = run_job(dit, llm, cfg)
+            if code != 0:
+                _emit("album", f"track {index} failed with code {code}")
+                continue
+            candidates = sorted(out_dir.glob(cfg["filename_prefix"] + "*"),
+                                key=lambda item: item.stat().st_mtime, reverse=True)
+            if candidates:
+                files.append({"index": index, "title": title,
+                              "file": str(candidates[0]), "prompt": cfg["caption"]})
+        meta = {"album_title": data.get("album_title", ""),
+                "artist": data.get("artist", ""),
+                "created": datetime.now().isoformat(timespec="seconds"),
+                "tracks": files}
+        (out_dir / "album.json").write_text(
+            json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+        _emit("albumdone", str(out_dir / "album.json"))
+        return 0 if len(files) == len(tracks) else 1
+    finally:
+        release_models(dit, llm)
+
+
 def main() -> int:
     _stdio()
     parser = argparse.ArgumentParser(description="ACE-Step 1.5 headless generator")
@@ -407,6 +488,7 @@ def main() -> int:
     parser.add_argument("--daemon", action="store_true", help="keep models loaded and read JSON jobs from stdin")
     parser.add_argument("--preflight", action="store_true", help="check files/packages only")
     parser.add_argument("--limits", action="store_true", help="print gpu_config limits and exit")
+    parser.add_argument("--album", type=Path, help="generate a multi-track album from JSON")
     parser.add_argument("--offload-mode", choices=("auto", "save_vram"), default="auto", help="daemon model offload policy")
     args = parser.parse_args()
 
@@ -417,6 +499,9 @@ def main() -> int:
         bootstrap()
         emit_limits()
         return 0
+    if args.album:
+        bootstrap()
+        return run_album(args.album)
     if not args.daemon and not args.config:
         parser.print_help()
         return 2
@@ -430,7 +515,9 @@ def main() -> int:
         cfg = load_config(args.config)
         _emit("config", json.dumps({k: cfg[k] for k in
                                     ("caption", "duration", "bpm", "inference_steps",
-                                     "seed", "thinking", "output_dir")}, ensure_ascii=False))
+                                     "seed", "thinking", "output_dir", "audio_format",
+                                     "lm_negative_prompt", "fade_in_duration", "fade_out_duration",
+                                     "shift", "mp3_bitrate", "mp3_sample_rate")}, ensure_ascii=False))
         return run_oneshot(cfg)
     except Exception as exc:  # noqa: BLE001
         _emit("error", f"{type(exc).__name__}: {exc}")

@@ -14,12 +14,173 @@ namespace AIMusicGenerator
                 Environment.Exit(AutoRunner.Run(args[1]));
                 return;
             }
+            if (args.Length >= 2 && args[0] == "--sd-test")
+            {
+                try
+                {
+                    Directory.CreateDirectory(Paths.TempDir);
+                    System.Text.StringBuilder log = new System.Text.StringBuilder();
+                    string audio = args[1];
+                    string model = args.Length >= 3 ? args[2] : "";
+                    bool ready = SdCoverClient.EnsureApi("http://127.0.0.1:7860",
+                        @"G:\stable-diffusion-webui", delegate(string message) { log.AppendLine(message); });
+                    if (!ready) throw new InvalidOperationException("SD API unavailable");
+                    if (model.Length > 0) SdCoverClient.SelectModel("http://127.0.0.1:7860", model);
+                    string cover = Path.ChangeExtension(audio, ".cover.png");
+                    SdCoverClient.GenerateCover("http://127.0.0.1:7860",
+                        "warm acoustic guitar album cover art, square composition, cinematic warm light, no text, no watermark, high quality",
+                        "text, watermark, logo, letters, blurry, low quality, deformed",
+                        512, 512, 12, cover);
+                    AudioTools.WriteTags(audio, "SD cover test", 1, "92", "C Major", "mp3", cover);
+                    string comment = AudioTools.ReadComment(audio);
+                    log.AppendLine("cover=" + cover + " bytes=" + (File.Exists(cover) ? new FileInfo(cover).Length : 0));
+                    log.AppendLine("tags=" + comment);
+                    File.WriteAllText(Path.Combine(Paths.TempDir, "sd_test.txt"), log.ToString());
+                    SdCoverClient.Stop();
+                    Environment.Exit(0);
+                }
+                catch (Exception ex)
+                {
+                    Directory.CreateDirectory(Paths.TempDir);
+                    File.WriteAllText(Path.Combine(Paths.TempDir, "sd_test.txt"), ex.ToString());
+                    SdCoverClient.Stop();
+                    Environment.Exit(1);
+                }
+                return;
+            }
+            if (args.Length >= 1 && args[0] == "--ui-test-single")
+            {
+                Application.EnableVisualStyles();
+                Application.SetCompatibleTextRenderingDefault(false);
+                MainForm form = new MainForm();
+                form.StartSingleUiTest();
+                Application.Run(form);
+                Environment.Exit(form.UiTestResult);
+                return;
+            }
+
+            if (args.Length >= 1 && args[0] == "--ui-selftest")
+            {
+                try
+                {
+                    using (MainForm form = new MainForm())
+                    {
+                        string report = form.UiSelfTest();
+                        Directory.CreateDirectory(Paths.TempDir);
+                        File.WriteAllText(Path.Combine(Paths.TempDir, "ui_selftest.txt"), report);
+                        Environment.Exit(0);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Directory.CreateDirectory(Paths.TempDir);
+                    File.WriteAllText(Path.Combine(Paths.TempDir, "ui_selftest.txt"), ex.ToString());
+                    Environment.Exit(1);
+                }
+                return;
+            }
+            if (args.Length >= 2 && args[0] == "--link-test")
+            {
+                try
+                {
+                    LinkInfo info = LinkAnalyzer.Analyze(args[1]);
+                    bool zh = args.Length >= 3 && args[2].Equals("zh", StringComparison.OrdinalIgnoreCase);
+                    PromptSuggestion suggestion = LinkAnalyzer.Suggest(info, true, zh);
+                    Directory.CreateDirectory(Paths.TempDir);
+                    string body = "source=" + info.Source + "\r\nartist=" + info.Artist +
+                                  "\r\ntitle=" + info.Title + "\r\nalbum=" + info.Album +
+                                  "\r\nyear=" + info.Year + "\r\ngenre=" + suggestion.Genre +
+                                  "\r\nbpm=" + suggestion.Bpm + "\r\nprompt=" + suggestion.Prompt +
+                                  "\r\nnegative=" + suggestion.Negative;
+                    File.WriteAllText(Path.Combine(Paths.TempDir, "link_test.txt"), body);
+                    Environment.Exit(0);
+                }
+                catch (Exception ex)
+                {
+                    Directory.CreateDirectory(Paths.TempDir);
+                    File.WriteAllText(Path.Combine(Paths.TempDir, "link_test.txt"), ex.ToString());
+                    Environment.Exit(1);
+                }
+                return;
+            }
+
+            if (args.Length >= 2 && args[0] == "--player-test")
+            {
+                try
+                {
+                    using (MainForm form = new MainForm())
+                    {
+                        string report = form.PlayerTest(args[1]);
+                        Directory.CreateDirectory(Paths.TempDir);
+                        File.WriteAllText(Path.Combine(Paths.TempDir, "player_test.txt"), report);
+                        Environment.Exit(0);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Directory.CreateDirectory(Paths.TempDir);
+                    File.WriteAllText(Path.Combine(Paths.TempDir, "player_test.txt"), ex.ToString());
+                    Environment.Exit(1);
+                }
+                return;
+            }
+            if (args.Length >= 2 && args[0] == "--audio-test")
+            {
+                try
+                {
+                    double seconds;
+                    float[] peaks = AudioTools.BuildPeaks(args[1], 128, out seconds);
+                    string copy = Path.Combine(Paths.TempDir, "audio_test_copy" + Path.GetExtension(args[1]));
+                    Directory.CreateDirectory(Paths.TempDir);
+                    File.Copy(args[1], copy, true);
+                    AudioTools.WriteTags(copy, "Audio test prompt", 123456, "78", "C Major", "wav", Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "cover.png"));
+                    string comment = AudioTools.ReadComment(copy);
+                    string report = "seconds=" + seconds.ToString("F2") + " peaks=" + peaks.Length +
+                                    " peak_max=" + MaxPeak(peaks).ToString("F3") + " comment=" + comment;
+                    File.WriteAllText(Path.Combine(Paths.TempDir, "audio_test.txt"), report);
+                    Environment.Exit(0);
+                }
+                catch (Exception ex)
+                {
+                    Directory.CreateDirectory(Paths.TempDir);
+                    File.WriteAllText(Path.Combine(Paths.TempDir, "audio_test.txt"), ex.ToString());
+                    Environment.Exit(1);
+                }
+                return;
+            }
+            if (args.Length >= 1 && args[0] == "--style-report")
+            {
+                Application.EnableVisualStyles();
+                Application.SetCompatibleTextRenderingDefault(false);
+                MainForm form = new MainForm();
+                form.ShowInTaskbar = false;
+                form.Opacity = 0;
+                form.Show();
+                Application.DoEvents();
+                System.Threading.Thread.Sleep(400);
+                Application.DoEvents();
+                System.IO.Directory.CreateDirectory(Paths.TempDir);
+                System.IO.File.WriteAllText(System.IO.Path.Combine(Paths.TempDir, "style_report.txt"), form.StyleReport());
+                form.Close();
+                Environment.Exit(0);
+                return;
+            }
+            if (args.Length >= 1 && args[0] == "--ui-test-batch")
+            {
+                Application.EnableVisualStyles();
+                Application.SetCompatibleTextRenderingDefault(false);
+                MainForm form = new MainForm();
+                form.StartUiTest(true);
+                Application.Run(form);
+                Environment.Exit(form.UiTestResult);
+                return;
+            }
             if (args.Length >= 1 && args[0] == "--ui-test")
             {
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
                 MainForm form = new MainForm();
-                form.StartUiTest();
+                form.StartUiTest(false);
                 Application.Run(form);
                 Environment.Exit(form.UiTestResult);
                 return;
@@ -53,6 +214,13 @@ namespace AIMusicGenerator
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             Application.Run(new MainForm());
+        }
+
+        private static float MaxPeak(float[] values)
+        {
+            float max = 0f;
+            foreach (float value in values) if (value > max) max = value;
+            return max;
         }
 
         private static void WriteSelftestError(string message)

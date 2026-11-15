@@ -13,11 +13,15 @@ if ($sources.Count -eq 0) { throw "no .cs files under $appDir\src" }
 
 $exe = Join-Path $appDir 'AIMusicGenerator.exe'
 $manifest = Join-Path $appDir 'app.manifest'
+$icon = Join-Path $appDir 'app.ico'
+$lib = Join-Path $appDir 'lib'
 & $csc /nologo /codepage:65001 /target:winexe /optimize+ "/out:$exe" `
     /r:System.dll /r:System.Core.dll /r:System.Windows.Forms.dll `
-    /r:System.Drawing.dll /r:System.Web.Extensions.dll "/win32manifest:$manifest" $sources
+    /r:System.Drawing.dll /r:System.Web.Extensions.dll "/win32manifest:$manifest" "/win32icon:$icon" `
+    "/r:$lib\NAudio.dll" "/r:$lib\TagLibSharp.dll" $sources
 if ($LASTEXITCODE -ne 0) { throw "compile failed: $LASTEXITCODE" }
 
+Copy-Item (Join-Path $lib '*.dll') $appDir -Force
 & $exe --selftest
 if ($LASTEXITCODE -ne 0) { throw "selftest failed: $LASTEXITCODE" }
 

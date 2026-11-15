@@ -36,6 +36,11 @@ W ("=" * 72)
 # ---- 1. stale old paths ----
 W "[1] files still referencing the old paths"
 $hits = 0
+$failures = New-Object System.Collections.Generic.List[string]
+function Add-Failure([string]$message) {
+    $failures.Add($message)
+    W ("    FAIL " + $message)
+}
 $scanExt = @('.exe', '.json', '.cfg', '.txt', '.pth', '.bat', '.cmd', '.ps1', '.sh', '.dat')
 foreach ($venv in @($main, $hf)) {
     $cand = @()
@@ -64,14 +69,15 @@ $links = @(
 )
 foreach ($l in $links) {
     $item = Get-Item $l.Path -Force -EA SilentlyContinue
-    if (-not $item) { W ("    MISSING   " + $l.Path); continue }
+    if (-not $item) { W ("    MISSING   " + $l.Path); Add-Failure ("missing junction: " + $l.Path); continue }
     if (-not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
-        W ("    NOT-LINK  " + $l.Path); continue
+        W ("    NOT-LINK  " + $l.Path); Add-Failure ("not a junction: " + $l.Path); continue
     }
     $target = @($item.Target)[0]
     $resolves = Test-Path (Join-Path $l.Path $l.Probe)
     W ("    {0,-9} {1,-56} -> {2}" -f $(if ($resolves) { 'ok' } else { 'BROKEN' }),
         $l.Path.Replace($proj, '<proj>'), $target)
+    if (-not $resolves) { Add-Failure ("broken junction: " + $l.Path) }
 }
 W ""
 
@@ -105,7 +111,10 @@ $okCount = 0; $badCount = 0
 foreach ($venv in @($main, $hf)) {
     foreach ($name in ($probeArgs.Keys | Sort-Object)) {
         $exe = Join-Path $venv (Join-Path 'Scripts' $name)
-        if (-not (Test-Path $exe)) { continue }
+        if (-not (Test-Path $exe)) {
+            if ($venv -eq $main) { Add-Failure ("missing wrapper: " + $name) }
+            continue
+        }
         $tmpO = [IO.Path]::GetTempFileName(); $tmpE = [IO.Path]::GetTempFileName()
         $saved = $ErrorActionPreference; $ErrorActionPreference = 'SilentlyContinue'
         & $exe @($probeArgs[$name]) 1> $tmpO 2> $tmpE
@@ -114,7 +123,16 @@ foreach ($venv in @($main, $hf)) {
         $txt = ((Get-Content $tmpO -Raw -EA SilentlyContinue) + (Get-Content $tmpE -Raw -EA SilentlyContinue))
         Remove-Item $tmpO, $tmpE -Force -EA SilentlyContinue
         $tramp = $txt -match 'uv trampoline failed'
-        if ($tramp) { $badCount++; W ("    BROKEN " + (Split-Path -Leaf $venv) + "\$name  (trampoline error)") }
+        if ($tramp) {
+            $badCount++
+            W ("    BROKEN " + (Split-Path -Leaf $venv) + "\$name  (trampoline error)")
+            Add-Failure ("trampoline failure: " + (Split-Path -Leaf $venv) + "\$name")
+        }
+        elseif ($code -ne 0) {
+            $badCount++
+            W ("    FAILED " + (Split-Path -Leaf $venv) + "\$name  exit=$code")
+            Add-Failure ("wrapper exit $code : " + (Split-Path -Leaf $venv) + "\$name")
+        }
         else { $okCount++; W ("    ok     " + (Split-Path -Leaf $venv) + "\$name  exit=$code") }
     }
 }
@@ -131,6 +149,11 @@ $ErrorActionPreference = $saved
 Get-Content $tmpO -EA SilentlyContinue | ForEach-Object { W ("    " + $_) }
 (Get-Content $tmpE -EA SilentlyContinue) | Where-Object { $_ } | ForEach-Object { W ("    ERR " + $_) }
 Remove-Item $tmpO, $tmpE -Force -EA SilentlyContinue
+$tmpO = [IO.Path]::GetTempFileName(); $tmpE = [IO.Path]::GetTempFileName()
+& $py -c "import torch,sys;sys.exit(0 if torch.cuda.is_available() else 3)" 1> $tmpO 2> $tmpE
+$cudaExit = $LASTEXITCODE
+if ($cudaExit -ne 0) { Add-Failure ("torch CUDA unavailable (exit=$cudaExit)") }
+Remove-Item $tmpO, $tmpE -Force -EA SilentlyContinue
 W ""
 
 # ---- 4. CUDA wheel origin + model files ----
@@ -145,6 +168,7 @@ foreach ($rel in @('acestep-v15-turbo\model.safetensors', 'acestep-5Hz-lm-1.7B\m
     $p = Join-Path $models $rel
     $state = if (Test-Path $p) { '{0:N1} MB' -f ((Get-Item $p).Length / 1MB) } else { 'MISSING' }
     W ("    {0,12}  {1}" -f $state, $rel)
+    if (-not (Test-Path $p)) { Add-Failure ("missing model file: " + $rel) }
 }
 $all = Get-ChildItem $models -Recurse -Force -File -EA SilentlyContinue |
     Where-Object { $_.FullName -notlike '*\.cache\*' }
@@ -153,7 +177,7 @@ W ""
 
 # ---- 6. project sources: no stale paths + valid syntax ----
 W "[6] project scripts"
-$skip = '\\.venv\\|\\.uv-cache\\|\\.hf-cache\\|\\models\\|\\wheels\\|\\__pycache__\\|\\logs\\'
+$skip = '\\.venv\\|\\.uv-cache\\|\\.hf-cache\\|\\models\\|\\wheels\\|\\__pycache__\\|\\logs\\|\\AI_Music_code_bundle_[^\\]*\\.txt'
 $srcFiles = Get-ChildItem $proj -Recurse -File -Force -EA SilentlyContinue |
     Where-Object { $_.FullName -notmatch $skip -and $_.Length -lt 3MB -and
                    $_.Extension -in '.py', '.ps1', '.md', '.txt', '.json', '.cfg', '.toml', '.bat', '.cmd' }
@@ -161,6 +185,7 @@ $stale = $srcFiles | Select-String -Pattern ([regex]::Escape($OldPaths[1])) -EA 
 if (($stale | Measure-Object).Count -eq 0) {
     W ("    {0} source files scanned - no stale absolute paths" -f $srcFiles.Count)
 } else {
+    Add-Failure ("stale old paths in " + (($stale | Group-Object Path).Count) + " source file(s)")
     foreach ($g in ($stale | Group-Object Path)) {
         W ("    STALE " + $g.Name.Replace($proj, '<proj>'))
         foreach ($m in $g.Group) { W ("        L{0}: {1}" -f $m.LineNumber, $m.Line.Trim()) }
@@ -173,14 +198,28 @@ $saved = $ErrorActionPreference; $ErrorActionPreference = 'SilentlyContinue'
 $pyExit = $LASTEXITCODE
 $ErrorActionPreference = $saved
 W ("    python syntax check: {0} file(s), exit={1}" -f $pyFiles.Count, $pyExit)
+if ($pyExit -ne 0) { Add-Failure ("python syntax check failed (exit=$pyExit)") }
 foreach ($ps in @((Join-Path $proj 'scripts\install_env.ps1'), (Join-Path $proj 'scripts\fetch_pytorch_wheels.ps1'),
                   (Join-Path $Root 'migrate_venv_paths.ps1'), (Join-Path $Root 'verify_migration.ps1'))) {
     if (-not (Test-Path $ps)) { continue }
     $err = $null
     [void][System.Management.Automation.Language.Parser]::ParseFile($ps, [ref]$null, [ref]$err)
-    W ("    {0,-28} powershell parse errors = {1}" -f (Split-Path -Leaf $ps), ($err | Measure-Object).Count)
+    $parseErrors = ($err | Measure-Object).Count
+    W ("    {0,-28} powershell parse errors = {1}" -f (Split-Path -Leaf $ps), $parseErrors)
+    if ($parseErrors -gt 0) { Add-Failure ("PowerShell parse errors in " + (Split-Path -Leaf $ps)) }
 }
 
+if ($failures.Count -gt 0) {
+    W ""
+    W ("RESULT: FAILED (" + $failures.Count + " failure(s))")
+    $r | Set-Content -LiteralPath $log -Encoding UTF8
+    Write-Host ""
+    Write-Host "log: $log"
+    exit 1
+}
+W ""
+W "RESULT: PASS"
 $r | Set-Content -LiteralPath $log -Encoding UTF8
 Write-Host ""
 Write-Host "log: $log"
+exit 0

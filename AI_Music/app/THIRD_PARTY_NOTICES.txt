@@ -1,0 +1,32 @@
+AI Music Maker - third-party notices
+
+Catppuccin (Latte / Mocha palettes)
+  License: MIT
+  https://github.com/catppuccin/catppuccin
+
+Lucide icons (audio-lines, play, pause, square, folder-open, sparkles, x)
+  License: ISC
+  https://github.com/lucide-icons/lucide
+  Copyright (c) 2022 Lucide Contributors
+
+NAudio (audio playback / decoding)
+  License: MIT
+  https://github.com/naudio/NAudio
+  Copyright (c) Mark Heath
+
+TagLib# / TagLibSharp (audio metadata tags and cover art)
+  License: LGPL-2.1
+  https://github.com/mono/taglib-sharp
+
+FFmpeg (MP3 encoding used by ACE-Step AudioSaver)
+  License: GPL-3.0 (gyan.dev essentials build)
+  https://ffmpeg.org
+  Bundled at AI_Music\tools\ffmpeg\bin\ffmpeg.exe
+
+imageio-ffmpeg (source of the bundled FFmpeg binary)
+  License: BSD-2-Clause (package)
+  https://github.com/imageio/imageio-ffmpeg
+
+App icon and default cover rendered from the Lucide 'audio-lines' SVG.
+Waveform drawing is original code (System.Drawing).
+Rounded WinForms buttons and the ThemeManager are original code.

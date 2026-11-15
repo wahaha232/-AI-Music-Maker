@@ -1,0 +1,122 @@
+[
+  {
+    "name": "lo-fi hip hop",
+    "name_zh": "Lo-fi Hip Hop",
+    "keywords": ["lofi", "lo-fi", "chillhop", "study beats", "jazz hop", "boom bap", "chill beats"],
+    "bpm": "75-85",
+    "prompt": "Warm 1990s-style lo-fi hip hop, dusty boom bap drums, mellow Rhodes piano, jazzy guitar, upright bass, vinyl crackle, tape hiss, relaxed swing, intimate late-night atmosphere",
+    "prompt_zh": "溫暖的 1990 年代 lo-fi hip hop，灰塵感 boom bap 鼓組、柔和 Rhodes 電鋼琴、爵士吉他、直立貝斯、黑膠雜訊、卡帶嘶聲、鬆弛搖擺、深夜氛圍",
+    "negative": "modern EDM, trap, aggressive drums, bright pop production, vocals",
+    "negative_zh": "現代 EDM、trap、侵略性鼓組、明亮流行製作、人聲"
+  },
+  {
+    "name": "boom bap hip hop",
+    "name_zh": "Boom Bap Hip Hop",
+    "keywords": ["boom bap", "hip hop", "rap", "underground hip hop", "90s hip hop"],
+    "bpm": "85-95",
+    "prompt": "Classic 1990s underground boom bap hip hop, dusty kick and snare, chopped jazz samples, warm upright bass, vinyl texture, swung humanized groove",
+    "prompt_zh": "經典 1990 年代地下 boom bap hip hop，灰塵感大鼓與小鼓、切碎爵士取樣、溫暖直立貝斯、黑膠質感、人性化搖擺律動",
+    "negative": "trap, modern EDM, autotune, polished digital production, vocals",
+    "negative_zh": "trap、現代 EDM、autotune、過度 polished 的數位製作、人聲"
+  },
+  {
+    "name": "city pop",
+    "name_zh": "城市流行",
+    "keywords": ["city pop", "citypop", "japanese city pop", "80s japanese"],
+    "bpm": "95-118",
+    "prompt": "1980s Japanese city pop, glossy electric bass, chorused guitar, Rhodes electric piano, punchy gated drums, warm analog synths, nostalgic summer night",
+    "prompt_zh": "1980 年代日本 city pop，明亮電貝斯、chorus 吉他、Rhodes 電鋼琴、飽滿 gated 鼓、溫暖類比合成器、懷舊夏夜",
+    "negative": "metal, harsh distortion, lo-fi noise, modern EDM",
+    "negative_zh": "金屬、強烈失真、lo-fi 噪音、現代 EDM"
+  },
+  {
+    "name": "synthwave",
+    "name_zh": "合成器浪潮",
+    "keywords": ["synthwave", "retrowave", "outrun", "80s synth", "neon"],
+    "bpm": "90-115",
+    "prompt": "1980s synthwave, warm analog polysynths, gated reverb drums, arpeggiated bass, neon night-drive atmosphere, retro-futuristic",
+    "prompt_zh": "1980 年代 synthwave，溫暖類比 polysynth、gated reverb 鼓、arpeggio 貝斯、霓虹夜駕氛圍、復古未來感",
+    "negative": "acoustic folk, orchestral, modern pop, vocals",
+    "negative_zh": "acoustic folk、管弦樂、現代流行、人聲"
+  },
+  {
+    "name": "ambient",
+    "name_zh": "氛圍音樂",
+    "keywords": ["ambient", "drone", "atmospheric", "soundscape", "meditation", "sleep"],
+    "bpm": "50-70",
+    "prompt": "Slow ambient soundscape, warm evolving pads, soft drones, gentle field recordings, spacious reverb, calm and weightless",
+    "prompt_zh": "緩慢 ambient 音景，溫暖演化 pad、柔和 drone、環境錄音、寬廣殘響、平靜漂浮",
+    "negative": "drums, aggressive percussion, EDM drop, vocals",
+    "negative_zh": "鼓組、侵略性打擊、EDM drop、人聲"
+  },
+  {
+    "name": "cinematic",
+    "name_zh": "電影配樂",
+    "keywords": ["cinematic", "trailer", "film score", "epic", "soundtrack", "orchestral"],
+    "bpm": "60-90",
+    "prompt": "Cinematic instrumental score, evolving strings, warm brass, soft piano, subtle percussion, emotional wide dynamics",
+    "prompt_zh": "電影配樂式器樂，演化弦樂、溫暖銅管、柔和鋼琴、細膩打擊、情緒化寬廣動態",
+    "negative": "EDM, trap, lo-fi noise, vocals",
+    "negative_zh": "EDM、trap、lo-fi 噪音、人聲"
+  },
+  {
+    "name": "jazz",
+    "name_zh": "爵士",
+    "keywords": ["jazz", "bebop", "swing", "jazz trio", "smooth jazz", "jazz piano"],
+    "bpm": "90-140",
+    "prompt": "Warm acoustic jazz, swinging ride cymbal, upright bass walking line, expressive jazz piano, brushes, intimate club room",
+    "prompt_zh": "溫暖 acoustic jazz，swing ride、直立貝斯 walking、表現力爵士鋼琴、鼓刷、親密俱樂部空間",
+    "negative": "EDM, distorted guitar, trap, vocals",
+    "negative_zh": "EDM、失真吉他、trap、人聲"
+  },
+  {
+    "name": "funk",
+    "name_zh": "放克",
+    "keywords": ["funk", "funky", "disco", "groove", "slap bass"],
+    "bpm": "100-120",
+    "prompt": "1970s funk groove, syncopated slap bass, tight wah guitar, punchy brass stabs, crisp drums, analog warmth",
+    "prompt_zh": "1970 年代 funk groove，切分 slap bass、緊實 wah 吉他、銅管短句、清脆鼓組、類比溫暖",
+    "negative": "ambient, orchestral, modern EDM, vocals",
+    "negative_zh": "ambient、管弦樂、現代 EDM、人聲"
+  },
+  {
+    "name": "house",
+    "name_zh": "浩室",
+    "keywords": ["house", "deep house", "chicago house", "garage"],
+    "bpm": "118-126",
+    "prompt": "Warm deep house, four-on-the-floor kick, shuffling hi-hats, round sub bass, soulful chords, analog texture",
+    "prompt_zh": "溫暖 deep house，四拍大鼓、shuffle hi-hat、圓潤 sub bass、靈魂和弦、類比質感",
+    "negative": "trap, metal, aggressive distortion, vocals",
+    "negative_zh": "trap、金屬、侵略性失真、人聲"
+  },
+  {
+    "name": "rock",
+    "name_zh": "搖滾",
+    "keywords": ["rock", "alternative rock", "indie rock", "grunge", "guitar"],
+    "bpm": "100-140",
+    "prompt": "Indie rock instrumental, overdriven guitars, driving bass, live acoustic drums, warm room ambience",
+    "prompt_zh": "獨立搖滾器樂，過載吉他、驅動貝斯、現場鼓組、溫暖房間殘響",
+    "negative": "EDM, trap, orchestral, vocals",
+    "negative_zh": "EDM、trap、管弦樂、人聲"
+  },
+  {
+    "name": "folk acoustic",
+    "name_zh": "民謠木吉他",
+    "keywords": ["folk", "acoustic", "singer songwriter", "campfire", "mandolin"],
+    "bpm": "80-110",
+    "prompt": "Warm acoustic folk instrumental, fingerpicked guitar, mandolin, soft upright bass, intimate room sound, natural dynamics",
+    "prompt_zh": "溫暖 acoustic folk 器樂，指彈吉他、曼陀林、柔和直立貝斯、親密房間聲、自然動態",
+    "negative": "EDM, distorted guitar, aggressive drums, vocals",
+    "negative_zh": "EDM、失真吉他、侵略性鼓組、人聲"
+  },
+  {
+    "name": "pop",
+    "name_zh": "流行",
+    "keywords": ["pop", "dance pop", "chart", "radio", "kpop", "k-pop"],
+    "bpm": "100-124",
+    "prompt": "Bright modern pop instrumental, clean production, catchy chord progression, punchy drums, warm bass",
+    "prompt_zh": "明亮現代流行器樂，乾淨製作、朗朗上口和弦進行、飽滿鼓組、溫暖貝斯",
+    "negative": "harsh noise, metal, lo-fi clutter, vocals",
+    "negative_zh": "刺耳噪音、金屬、lo-fi 雜亂、人聲"
+  }
+]

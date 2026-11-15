@@ -5,6 +5,8 @@ using System.Drawing;
 using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
+using NAudio.Wave;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
@@ -14,8 +16,8 @@ namespace AIMusicGenerator
 {
     internal sealed class MainForm : Form
     {
-        private readonly TextBox txtCaption = new TextBox();
-        private readonly TextBox txtLyrics = new TextBox();
+        private readonly RichTextBox txtCaption = new RichTextBox();
+        private readonly RichTextBox txtLyrics = new RichTextBox();
         private readonly TextBox txtOutDir = new TextBox();
         private readonly TextBox txtSeed = new TextBox();
         private readonly TextBox txtLog = new TextBox();
@@ -28,13 +30,53 @@ namespace AIMusicGenerator
         private readonly ComboBox comboLanguage = new ComboBox();
         private readonly ComboBox comboFormat = new ComboBox();
         private readonly ComboBox comboOffload = new ComboBox();
+        private readonly ComboBox comboTheme = new ComboBox();
         private readonly CheckBox chkAutoBpm = new CheckBox();
         private readonly CheckBox chkInstrumental = new CheckBox();
         private readonly CheckBox chkThinking = new CheckBox();
+        private readonly CheckBox chkKeepModel = new CheckBox();
         private readonly Button btnGenerate = new Button();
         private readonly Button btnCancel = new Button();
         private readonly Button btnOpen = new Button();
+        private readonly Button btnPlay = new Button();
+        private readonly Button btnLink = new Button();
+        private readonly NumericUpDown numPromptHeight = new NumericUpDown();
+        private readonly Panel resizeGrip = new Panel();
+        private bool resizingPrompt;
+        private Point promptResizeStart;
+        private Size promptResizeSize;
+        private int promptWidth = 1476;
+        private bool updatingPromptSize;
+        private readonly Button btnAdvanced = new Button();
+        private readonly Button btnSd = new Button();
+        private readonly Button btnTelegram = new Button();
+        private readonly Button btnAlbum = new Button();
+        private Process albumProcess;
+        private bool albumStarting;
+        private Process telegramProcess;
+        private bool sdEnabled = false;
+        private string sdUrl = "http://127.0.0.1:7860";
+        private string sdPath = @"G:\stable-diffusion-webui";
+        private string sdModel = "";
+        private int sdSteps = 20;
+        private int sdSize = 512;
+        private string negativePrompt = "";
+        private decimal fadeInValue = 0m;
+        private decimal fadeOutValue = 0m;
+        private decimal shiftValue = 1.0m;
+        private string mp3BitrateValue = "128k";
+        private int mp3SampleRateValue = 48000;
+        private List<Control> lowerControls = new List<Control>();
+        private readonly Button btnPlayPause = new Button();
+        private readonly Button btnStop = new Button();
+        private readonly TrackBar seekBar = new TrackBar();
+        private readonly Label lblTime = new Label();
+        private readonly WaveformPanel waveform = new WaveformPanel();
+        private readonly WinTimer playbackTimer = new WinTimer();
+        private readonly CheckBox chkBatch = new CheckBox();
+        private readonly ListBox lstHistory = new ListBox();
         private readonly Button btnBrowse = new Button();
+        private readonly Button btnCover = new Button();
         private readonly ProgressBar bar = new ProgressBar();
         private readonly Label lblStatus = new Label();
         private readonly WinTimer finishTimer = new WinTimer();
@@ -58,10 +100,27 @@ namespace AIMusicGenerator
         private int exitCode = -1;
         private DateTime jobStarted;
         private int maxDurationWithLm = 480;
+        private readonly Queue<Dictionary<string, object>> batchQueue = new Queue<Dictionary<string, object>>();
+        private int batchTotal;
+        private int batchCompleted;
+        private int batchErrors;
+        private bool batchActive;
+        private bool softCancel;
+        private Image iconPlay;
+        private Image iconPause;
+        private WaveOutEvent audioOutput;
+        private WaveStream audioStream;
+        private string loadedAudioPath = "";
+        private string coverPath = "";
+        private bool scrubbing;
         private WinTimer uiTestTimer;
         private int uiTestState;
         private int uiTestTicks;
         internal int UiTestResult = -1;
+        private bool uiTestBatch;
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, string lParam);
+        private const int EM_SETCUEBANNER = 0x1501;
         private const string DefaultCaption =
             "Warm lo-fi chill instrumental with mellow Rhodes piano, soft hip-hop drums, " +
             "warm bass and vinyl crackle. Instrumental only, no vocals.";
@@ -69,12 +128,19 @@ namespace AIMusicGenerator
         public MainForm()
         {
             Text = "AI Music Generator - ACE-Step 1.5";
-            Font = new Font("Microsoft JhengHei UI", 10F);
-            ClientSize = new Size(960, 776);
-            MinimumSize = new Size(820, 660);
+            Font = new Font("Microsoft JhengHei UI", 11F);
+            AutoScaleMode = AutoScaleMode.Dpi;
+            AutoScaleDimensions = new SizeF(96F, 96F);
+            ClientSize = new Size(1500, 1000);
+            MinimumSize = new Size(1200, 800);
             StartPosition = FormStartPosition.CenterScreen;
+            WindowState = FormWindowState.Maximized;
             BuildUi();
+            TryLoadIcon();
+            ApplyTheme();
+            ApplyButtonIcons();
             LoadSettings();
+            RefreshHistory();
             finishTimer.Interval = 700;
             finishTimer.Tick += OnFinishTimer;
             logTimer.Interval = 100;
@@ -82,162 +148,568 @@ namespace AIMusicGenerator
             logTimer.Start();
             elapsedTimer.Interval = 1000;
             elapsedTimer.Tick += OnElapsedTimer;
+            playbackTimer.Interval = 200;
+            playbackTimer.Tick += OnPlaybackTimer;
             CleanupTempConfigs();
             LoadLimitsAsync();
         }
 
         private void BuildUi()
         {
-            Label lblCaption = MakeLabel("音樂描述 (Caption)", 12, 12);
-            txtCaption.SetBounds(12, 34, 924, 86);
-            txtCaption.Multiline = true;
-            txtCaption.ScrollBars = ScrollBars.Vertical;
-            txtCaption.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            Label lblCaption = MakeLabel("提示詞 (Prompt / Caption)", 12, 12);
+            txtCaption.SetBounds(12, 44, promptWidth, 110);
+            txtCaption.ScrollBars = RichTextBoxScrollBars.Vertical;
+            txtCaption.WordWrap = true;
+            txtCaption.DetectUrls = false;
+            txtCaption.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+            txtCaption.HandleCreated += delegate(object sender, EventArgs e)
+            {
+                SendMessage(txtCaption.Handle, EM_SETCUEBANNER, (IntPtr)1,
+                    "描述風格、樂器、氛圍、節奏、人聲（純音樂可留歌詞 [Instrumental]）");
+                txtCaption.ScrollBars = RichTextBoxScrollBars.Vertical;
+                txtCaption.WordWrap = true;
+            };
+            Label lblPromptHeight = MakeLabel("高度", 500, 12);
+            numPromptHeight.SetBounds(544, 8, 72, 28);
+            numPromptHeight.Minimum = 60;
+            numPromptHeight.Maximum = 260;
+            numPromptHeight.Increment = 10;
+            numPromptHeight.Value = 110;
+            numPromptHeight.ValueChanged += OnPromptHeightChanged;
 
-            Label lblLyrics = MakeLabel("歌詞 (純音樂可留 [Instrumental])", 12, 128);
-            txtLyrics.SetBounds(12, 150, 924, 52);
-            txtLyrics.Multiline = true;
-            txtLyrics.ScrollBars = ScrollBars.Vertical;
+            chkBatch.SetBounds(1090, 10, 386, 28);
+            chkBatch.Text = "批次（每行一個提示詞）";
+            chkBatch.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+
+            btnSd.SetBounds(620, 8, 84, 34);
+            btnSd.Text = "SD...";
+            btnSd.Font = new Font(Font.FontFamily, 11F);
+            btnSd.Click += OnSd;
+
+            btnAdvanced.SetBounds(712, 8, 120, 34);
+            btnAdvanced.Text = "設定";
+            btnAdvanced.Font = new Font(Font.FontFamily, 11F);
+            btnAdvanced.Click += OnAdvanced;
+
+            btnLink.SetBounds(900, 8, 180, 34);
+            btnLink.Text = "參考連結";
+            btnLink.Font = new Font(Font.FontFamily, 11F);
+            btnLink.Click += OnLinkPrompt;
+
+            comboTheme.DropDownStyle = ComboBoxStyle.DropDownList;
+            comboTheme.Items.AddRange(new object[] { "Mocha 深色", "Latte 淺色" });
+            comboTheme.SelectedIndex = 0;
+            comboTheme.Width = 90;
+            comboTheme.SelectedIndexChanged += OnThemeChanged;
+
+            lblPromptHeight.SetBounds(400, 10, 50, 24);
+            numPromptHeight.SetBounds(470, 4, 100, 32);
+            btnSd.SetBounds(578, 4, 84, 34);
+            btnAdvanced.SetBounds(670, 4, 120, 34);
+            btnLink.SetBounds(798, 4, 160, 34);
+            comboTheme.SetBounds(966, 4, 160, 32);
+            chkBatch.SetBounds(1134, 6, 340, 30);
+            btnLink.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+            comboTheme.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+            chkBatch.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+
+            resizeGrip.SetBounds(txtCaption.Right - 16, txtCaption.Bottom - 16, 14, 14);
+            resizeGrip.BackColor = ThemeManager.Accent;
+            resizeGrip.Cursor = Cursors.SizeNWSE;
+            resizeGrip.MouseDown += OnPromptGripDown;
+            resizeGrip.MouseMove += OnPromptGripMove;
+            resizeGrip.MouseUp += OnPromptGripUp;
+
+            Label lblLyrics = MakeLabel("歌詞 (純音樂可留 [Instrumental])", 12, 170);
+            txtLyrics.SetBounds(12, 200, 1476, 64);
+            txtLyrics.ScrollBars = RichTextBoxScrollBars.Vertical;
+            txtLyrics.WordWrap = true;
+            txtLyrics.DetectUrls = false;
             txtLyrics.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
-            Label lblBpm = MakeLabel("BPM", 12, 214);
-            numBpm.SetBounds(56, 210, 70, 26);
-            numBpm.Minimum = 20;
+            FlowLayoutPanel row1 = MakeRow(280);
+            Label lblBpm = MakeLabel("BPM", 0, 0);
+            AddRowLabel(row1, lblBpm);
+            numBpm.Minimum = 30;
             numBpm.Maximum = 300;
             numBpm.Value = 78;
-            chkAutoBpm.SetBounds(130, 212, 58, 24);
+            numBpm.Width = 80;
+            AddRowControl(row1, numBpm, 10);
             chkAutoBpm.Text = "自動";
             chkAutoBpm.Checked = true;
+            chkAutoBpm.AutoSize = true;
             chkAutoBpm.CheckedChanged += OnAutoBpmChanged;
+            AddRowControl(row1, chkAutoBpm, 18);
 
-            Label lblDuration = MakeLabel("長度(秒)", 196, 214);
-            numDuration.SetBounds(266, 210, 76, 26);
-            numDuration.Minimum = 5;
+            Label lblDuration = MakeLabel("長度(秒)", 0, 0);
+            AddRowLabel(row1, lblDuration);
+            numDuration.Minimum = 10;
             numDuration.Maximum = 600;
             numDuration.Value = 60;
+            numDuration.Width = 86;
+            AddRowControl(row1, numDuration, 18);
 
-            Label lblSteps = MakeLabel("步數", 352, 214);
-            numSteps.SetBounds(400, 210, 60, 26);
+            Label lblSteps = MakeLabel("步數", 0, 0);
+            AddRowLabel(row1, lblSteps);
             numSteps.Minimum = 1;
             numSteps.Maximum = 100;
             numSteps.Value = 8;
+            numSteps.Width = 66;
+            AddRowControl(row1, numSteps, 18);
 
-            Label lblSeed = MakeLabel("種子 (空白=隨機)", 472, 214);
-            txtSeed.SetBounds(600, 210, 96, 26);
+            Label lblSeed = MakeLabel("種子", 0, 0);
+            AddRowLabel(row1, lblSeed);
+            txtSeed.Width = 150;
+            txtSeed.HandleCreated += delegate(object sender, EventArgs e)
+            {
+                SendMessage(txtSeed.Handle, EM_SETCUEBANNER, (IntPtr)1, "空白=隨機");
+            };
+            AddRowControl(row1, txtSeed, 18);
 
-            chkInstrumental.SetBounds(704, 212, 96, 24);
             chkInstrumental.Text = "純音樂";
             chkInstrumental.Checked = true;
+            chkInstrumental.AutoSize = true;
+            AddRowControl(row1, chkInstrumental, 14);
 
-            chkThinking.SetBounds(804, 212, 150, 24);
             chkThinking.Text = "LM 思考 (較慢)";
             chkThinking.Checked = true;
+            chkThinking.AutoSize = true;
             chkThinking.CheckedChanged += OnThinkingChanged;
 
-            Label lblKey = MakeLabel("調性", 12, 250);
-            comboKey.SetBounds(56, 246, 120, 26);
+            FlowLayoutPanel row2 = MakeRow(330);
+            Label lblKey = MakeLabel("調性", 0, 0);
+            AddRowLabel(row2, lblKey);
             comboKey.DropDownStyle = ComboBoxStyle.DropDownList;
             comboKey.Items.AddRange(new object[]
             {
-                "自動", "C Major", "G Major", "D Major", "A Major", "E Major",
-                "F Major", "A Minor", "E Minor", "B Minor", "D Minor"
+                "自動", "C Major", "C Minor", "C# Major", "C# Minor",
+                "D Major", "D Minor", "D# Major", "D# Minor",
+                "E Major", "E Minor", "F Major", "F Minor",
+                "F# Major", "F# Minor", "G Major", "G Minor",
+                "G# Major", "G# Minor", "A Major", "A Minor",
+                "A# Major", "A# Minor", "B Major", "B Minor"
             });
             comboKey.SelectedIndex = 0;
+            comboKey.Width = 200;
+            AddRowControl(row2, comboKey, 20);
 
-            Label lblSignature = MakeLabel("拍號", 192, 250);
-            comboSignature.SetBounds(240, 246, 60, 26);
+            Label lblSignature = MakeLabel("拍號", 0, 0);
+            AddRowLabel(row2, lblSignature);
             comboSignature.DropDownStyle = ComboBoxStyle.DropDownList;
             comboSignature.Items.AddRange(new object[] { "自動", "4", "3", "6" });
             comboSignature.SelectedIndex = 0;
+            comboSignature.Width = 100;
+            AddRowControl(row2, comboSignature, 20);
 
-            Label lblGuidance = MakeLabel("Guidance", 316, 250);
-            numGuidance.SetBounds(402, 246, 80, 26);
+            Label lblGuidance = MakeLabel("Guidance", 0, 0);
+            AddRowLabel(row2, lblGuidance);
             numGuidance.DecimalPlaces = 2;
             numGuidance.Increment = 0.1m;
             numGuidance.Minimum = 0.1m;
             numGuidance.Maximum = 20m;
             numGuidance.Value = 1.0m;
+            numGuidance.Width = 90;
+            AddRowControl(row2, numGuidance, 20);
 
-            Label lblLanguage = MakeLabel("語言", 510, 250);
-            comboLanguage.SetBounds(558, 246, 110, 26);
+            Label lblLanguage = MakeLabel("語言", 0, 0);
+            AddRowLabel(row2, lblLanguage);
             comboLanguage.DropDownStyle = ComboBoxStyle.DropDownList;
             comboLanguage.Items.AddRange(new object[]
             {
-                "unknown", "en", "zh", "ja", "ko", "es", "fr", "de"
+                "unknown", "en", "zh", "yue", "ja", "ko", "es", "fr",
+                "de", "it", "pt", "ru", "ar", "hi", "th", "vi", "id", "tr"
             });
             comboLanguage.SelectedIndex = 0;
+            comboLanguage.Width = 220;
+            AddRowControl(row2, comboLanguage, 0);
+            AddRowControl(row2, chkThinking, 18);
 
-            Label lblFormat = MakeLabel("輸出格式", 12, 286);
-            comboFormat.SetBounds(86, 282, 90, 26);
+            FlowLayoutPanel row3 = MakeRow(380);
+            Label lblFormat = MakeLabel("輸出格式", 0, 0);
+            AddRowLabel(row3, lblFormat);
             comboFormat.DropDownStyle = ComboBoxStyle.DropDownList;
             comboFormat.Items.AddRange(new object[] { "wav", "flac", "mp3" });
             comboFormat.SelectedIndex = 0;
+            comboFormat.Width = 100;
+            AddRowControl(row3, comboFormat, 20);
 
-            Label lblOffload = MakeLabel("Offload", 192, 286);
-            comboOffload.SetBounds(266, 282, 110, 26);
+            Label lblOffload = MakeLabel("Offload", 0, 0);
+            AddRowLabel(row3, lblOffload);
             comboOffload.DropDownStyle = ComboBoxStyle.DropDownList;
             comboOffload.Items.AddRange(new object[] { "auto", "save_vram" });
             comboOffload.SelectedIndex = 0;
+            comboOffload.Width = 130;
+            AddRowControl(row3, comboOffload, 20);
 
-            Label lblOffloadHint = MakeLabel("(於下次模型載入生效)", 388, 286);
+            Label lblOffloadHint = MakeLabel("(於下次模型載入生效)", 0, 0);
             lblOffloadHint.ForeColor = Color.DimGray;
+            AddRowControl(row3, lblOffloadHint, 24);
 
-            Label lblOut = MakeLabel("輸出資料夾", 12, 318);
-            txtOutDir.SetBounds(12, 340, 810, 26);
-            txtOutDir.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            btnBrowse.SetBounds(832, 338, 104, 30);
+            chkKeepModel.Text = "取消時保留模型（背景跑完）";
+            chkKeepModel.AutoSize = true;
+            AddRowControl(row3, chkKeepModel, 0);
+
+            Label lblOut = MakeLabel("輸出資料夾", 12, 438);
+            txtOutDir.SetBounds(0, 0, 1000, 34);
+            btnBrowse.SetBounds(0, 0, 104, 38);
             btnBrowse.Text = "瀏覽...";
-            btnBrowse.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             btnBrowse.Click += OnBrowse;
 
-            btnGenerate.SetBounds(12, 374, 150, 40);
+            btnCover.SetBounds(0, 0, 100, 38);
+            btnTelegram.SetBounds(0, 0, 90, 38);
+            btnTelegram.Text = "TG";
+            btnTelegram.Click += OnTelegram;
+
+            btnAlbum.SetBounds(0, 0, 90, 38);
+            btnAlbum.Text = "專輯";
+            btnAlbum.Click += OnAlbum;
+            btnCover.Text = "封面...";
+            btnCover.Click += OnCover;
+
+            FlowLayoutPanel outRow = new FlowLayoutPanel();
+            outRow.SetBounds(12, 462, ClientSize.Width - 24, 44);
+            outRow.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            outRow.WrapContents = false;
+            outRow.BackColor = Color.Transparent;
+            foreach (Control item in new Control[] { txtOutDir, btnBrowse, btnCover, btnTelegram, btnAlbum })
+            {
+                item.Margin = new Padding(0, 3, 8, 0);
+                outRow.Controls.Add(item);
+            }
+
+            btnGenerate.SetBounds(12, 512, 170, 46);
             btnGenerate.Text = "生成音樂";
             btnGenerate.Font = new Font(Font, FontStyle.Bold);
             btnGenerate.Click += OnGenerate;
 
-            btnCancel.SetBounds(170, 374, 100, 40);
+            btnCancel.SetBounds(190, 512, 110, 46);
             btnCancel.Text = "取消";
             btnCancel.Enabled = false;
             btnCancel.Click += OnCancel;
 
-            btnOpen.SetBounds(278, 374, 130, 40);
+            btnOpen.SetBounds(310, 512, 190, 46);
             btnOpen.Text = "開啟資料夾";
             btnOpen.Enabled = false;
             btnOpen.Click += OnOpenFolder;
 
-            lblStatus.SetBounds(420, 384, 516, 22);
+            btnPlay.SetBounds(510, 512, 110, 46);
+            btnPlay.Text = "播放";
+            btnPlay.Enabled = false;
+            btnPlay.Click += OnPlay;
+
+            lblStatus.SetBounds(640, 522, 848, 26);
             lblStatus.Text = "待命 - 首次載入模型約需 1-5 分鐘，載入後保持常駐";
             lblStatus.AutoEllipsis = true;
             lblStatus.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
-            bar.SetBounds(12, 424, 924, 14);
+            btnPlayPause.SetBounds(12, 570, 120, 40);
+            btnPlayPause.Text = "播放";
+            btnPlayPause.Click += OnPlayPauseClick;
+
+            btnStop.SetBounds(140, 570, 120, 40);
+            btnStop.Text = "停止";
+            btnStop.Click += OnStopClick;
+
+            seekBar.SetBounds(272, 564, 1020, 50);
+            seekBar.Minimum = 0;
+            seekBar.Maximum = 1000;
+            seekBar.TickStyle = TickStyle.None;
+            seekBar.Scroll += OnSeekScroll;
+            seekBar.MouseDown += delegate(object sender, MouseEventArgs e) { scrubbing = true; };
+            seekBar.MouseUp += delegate(object sender, MouseEventArgs e) { scrubbing = false; SeekTo(seekBar.Value / 1000.0); };
+
+            lblTime.SetBounds(1300, 572, 220, 26);
+            lblTime.Text = "00:00 / 00:00";
+
+            waveform.SetBounds(12, 624, 1476, 40);
+            waveform.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            waveform.SeekRequested += OnWaveformSeek;
+
+            bar.SetBounds(12, 668, 1476, 16);
             bar.Style = ProgressBarStyle.Blocks;
             bar.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
-            Label lblLog = MakeLabel("執行日誌", 12, 446);
-            txtLog.SetBounds(12, 468, 924, 296);
+            Label lblLog = MakeLabel("執行日誌", 12, 698);
+            txtLog.SetBounds(12, 724, 980, 264);
             txtLog.Multiline = true;
             txtLog.ReadOnly = true;
             txtLog.ScrollBars = ScrollBars.Vertical;
             txtLog.WordWrap = true;
             txtLog.BackColor = Color.FromArgb(24, 24, 24);
             txtLog.ForeColor = Color.Gainsboro;
-            txtLog.Font = new Font("Consolas", 9F);
-            txtLog.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            txtLog.Font = new Font("Consolas", 10F);
+            txtLog.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left;
+
+            Label lblHistory = MakeLabel("歷史輸出（雙擊播放）", 1004, 698);
+            lstHistory.SetBounds(1004, 724, 484, 264);
+            lstHistory.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            lstHistory.IntegralHeight = false;
+            lstHistory.DrawMode = DrawMode.OwnerDrawFixed;
+            lstHistory.ItemHeight = 32;
+            lstHistory.DrawItem += OnHistoryDrawItem;
+            lstHistory.SelectedIndexChanged += OnHistorySelected;
+            lstHistory.DoubleClick += delegate(object sender, EventArgs e) { PlaySelected(); };
 
             Controls.AddRange(new Control[]
             {
-                lblCaption, txtCaption, lblLyrics, txtLyrics,
-                lblBpm, numBpm, chkAutoBpm, lblDuration, numDuration,
-                lblSteps, numSteps, lblSeed, txtSeed, chkInstrumental, chkThinking,
-                lblKey, comboKey, lblSignature, comboSignature, lblGuidance, numGuidance,
-                lblLanguage, comboLanguage, lblFormat, comboFormat,
-                lblOffload, comboOffload, lblOffloadHint,
-                lblOut, txtOutDir, btnBrowse,
-                btnGenerate, btnCancel, btnOpen, lblStatus, bar, lblLog, txtLog
+                lblCaption, lblPromptHeight, numPromptHeight, btnSd, btnAdvanced, btnLink, comboTheme, chkBatch, txtCaption, resizeGrip, lblLyrics, txtLyrics,
+                row1, row2, row3,
+                lblOut, outRow,
+                btnGenerate, btnCancel, btnOpen, btnPlay,
+                btnPlayPause, btnStop, seekBar, lblTime, waveform,
+                lblStatus, bar, lblLog, txtLog, lblHistory, lstHistory
             });
 
+            lowerControls = new List<Control>
+            {
+                lblLyrics, txtLyrics, row1, row2, row3,
+                lblOut, outRow,
+                btnGenerate, btnCancel, btnOpen, btnPlay, lblStatus,
+                btnPlayPause, btnStop, seekBar, lblTime, waveform, bar,
+                lblLog, txtLog, lblHistory, lstHistory
+            };
+
+            Resize += delegate
+            {
+                int maxWidth = Math.Max(300, ClientSize.Width - txtCaption.Left - 24);
+                if (txtCaption.Width > maxWidth) SetPromptWidth(maxWidth);
+                PositionGrip();
+            };
+
             FormClosing += OnFormClosing;
+        }
+
+
+
+
+        private void TryLoadIcon()
+        {
+            try
+            {
+                string iconPath = System.IO.Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory, "app.ico");
+                if (File.Exists(iconPath)) Icon = new Icon(iconPath);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        [DllImport("dwmapi.dll")]
+        private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            try
+            {
+                int enabled = 1;
+                DwmSetWindowAttribute(Handle, 20, ref enabled, sizeof(int));
+                DwmSetWindowAttribute(Handle, 19, ref enabled, sizeof(int));
+            }
+            catch (Exception)
+            {
+            }
+        }
+
+        private void ApplyTheme()
+        {
+            ThemeManager.Apply(this);
+            ThemeManager.StylePrimary(btnGenerate);
+            ThemeManager.StylePrimary(btnPlayPause);
+            lblStatus.ForeColor = ThemeManager.Dark
+                ? Color.FromArgb(148, 205, 255)
+                : Color.FromArgb(0, 100, 200);
+            txtLog.BackColor = ThemeManager.LogBack;
+            txtLog.ForeColor = ThemeManager.Text;
+            lstHistory.BackColor = ThemeManager.InputBack;
+            lstHistory.ForeColor = ThemeManager.Text;
+            waveform.ThemeDark = ThemeManager.Dark;
+            waveform.BackColor = ThemeManager.Dark
+                ? Color.FromArgb(18, 19, 24)
+                : Color.FromArgb(250, 250, 252);
+            waveform.Invalidate();
+            resizeGrip.BackColor = ThemeManager.Accent;
+            Invalidate(true);
+        }
+
+        private void OnThemeChanged(object sender, EventArgs e)
+        {
+            if (updatingPromptSize) return;
+            ThemeManager.SetTheme(comboTheme.SelectedIndex == 0);
+            ApplyTheme();
+            SaveSettings();
+        }
+
+        private void OnPromptGripDown(object sender, MouseEventArgs e)
+        {
+            resizingPrompt = true;
+            promptResizeStart = Cursor.Position;
+            promptResizeSize = txtCaption.Size;
+            resizeGrip.Capture = true;
+        }
+
+        private void OnPromptGripMove(object sender, MouseEventArgs e)
+        {
+            if (!resizingPrompt) return;
+            Point now = Cursor.Position;
+            int width = promptResizeSize.Width + (now.X - promptResizeStart.X);
+            int height = promptResizeSize.Height + (now.Y - promptResizeStart.Y);
+            SetPromptWidth(width);
+            SetPromptHeight(height);
+        }
+
+        private void OnPromptGripUp(object sender, MouseEventArgs e)
+        {
+            if (!resizingPrompt) return;
+            resizingPrompt = false;
+            resizeGrip.Capture = false;
+            SaveSettings();
+        }
+
+        private void SetPromptWidth(int width)
+        {
+            int maxWidth = Math.Max(300, ClientSize.Width - txtCaption.Left - 24);
+            width = Math.Max(300, Math.Min(maxWidth, width));
+            txtCaption.Width = width;
+            promptWidth = width;
+            PositionGrip();
+        }
+
+        private void PositionGrip()
+        {
+            resizeGrip.Left = txtCaption.Right - 16;
+            resizeGrip.Top = txtCaption.Bottom - 16;
+            resizeGrip.BringToFront();
+        }
+
+        private void ApplyThemeTo(Control control)
+        {
+            FlowLayoutPanel row = control as FlowLayoutPanel;
+            if (row != null)
+            {
+                row.BackColor = Color.Transparent;
+                foreach (Control child in row.Controls) ApplyThemeTo(child);
+                return;
+            }
+            Label label = control as Label;
+            if (label != null)
+            {
+                label.BackColor = Color.Transparent;
+                if (label != lblStatus) label.ForeColor = Color.FromArgb(188, 194, 208);
+                return;
+            }
+            RichTextBox richText = control as RichTextBox;
+            if (richText != null)
+            {
+                richText.BackColor = Color.FromArgb(30, 32, 40);
+                richText.ForeColor = Color.FromArgb(240, 242, 247);
+                richText.BorderStyle = BorderStyle.FixedSingle;
+                return;
+            }
+            TextBox textBox = control as TextBox;
+            if (textBox != null)
+            {
+                textBox.BackColor = Color.FromArgb(30, 32, 40);
+                textBox.ForeColor = Color.FromArgb(240, 242, 247);
+                textBox.BorderStyle = BorderStyle.FixedSingle;
+                return;
+            }
+            ListBox listBox = control as ListBox;
+            if (listBox != null)
+            {
+                listBox.BackColor = Color.FromArgb(22, 24, 31);
+                listBox.ForeColor = Color.FromArgb(226, 229, 238);
+                listBox.BorderStyle = BorderStyle.FixedSingle;
+                return;
+            }
+            ComboBox comboBox = control as ComboBox;
+            if (comboBox != null)
+            {
+                comboBox.BackColor = Color.FromArgb(30, 32, 40);
+                comboBox.ForeColor = Color.FromArgb(240, 242, 247);
+                comboBox.FlatStyle = FlatStyle.Flat;
+                return;
+            }
+            TrackBar trackBar = control as TrackBar;
+            if (trackBar != null)
+            {
+                trackBar.BackColor = Color.FromArgb(22, 24, 31);
+                trackBar.ForeColor = Color.FromArgb(188, 194, 208);
+                return;
+            }
+            WaveformPanel wave = control as WaveformPanel;
+            if (wave != null)
+            {
+                wave.BackColor = Color.FromArgb(22, 24, 31);
+                return;
+            }
+            NumericUpDown numeric = control as NumericUpDown;
+            if (numeric != null)
+            {
+                numeric.BackColor = Color.FromArgb(30, 32, 40);
+                numeric.ForeColor = Color.FromArgb(240, 242, 247);
+                numeric.BorderStyle = BorderStyle.FixedSingle;
+                return;
+            }
+            CheckBox checkBox = control as CheckBox;
+            if (checkBox != null)
+            {
+                checkBox.BackColor = Color.Transparent;
+                checkBox.ForeColor = Color.FromArgb(214, 219, 230);
+                return;
+            }
+            Button button = control as Button;
+            if (button != null)
+            {
+                StyleButton(button, button == btnGenerate);
+                return;
+            }
+        }
+
+        private static void StyleButton(Button button, bool primary)
+        {
+            button.FlatStyle = FlatStyle.Flat;
+            button.FlatAppearance.BorderSize = 1;
+            button.FlatAppearance.BorderColor = primary
+                ? Color.FromArgb(124, 92, 255)
+                : Color.FromArgb(58, 62, 75);
+            button.BackColor = primary
+                ? Color.FromArgb(108, 92, 231)
+                : Color.FromArgb(38, 41, 51);
+            button.ForeColor = Color.White;
+            button.Cursor = Cursors.Hand;
+            button.FlatAppearance.MouseOverBackColor = primary
+                ? Color.FromArgb(126, 110, 245)
+                : Color.FromArgb(48, 52, 64);
+            button.FlatAppearance.MouseDownBackColor = primary
+                ? Color.FromArgb(92, 78, 205)
+                : Color.FromArgb(32, 35, 44);
+        }
+
+        private static FlowLayoutPanel MakeRow(int y)
+        {
+            FlowLayoutPanel row = new FlowLayoutPanel();
+            row.SetBounds(12, y, 1476, 44);
+            row.FlowDirection = FlowDirection.LeftToRight;
+            row.WrapContents = false;
+            row.AutoSize = false;
+            row.BackColor = Color.Transparent;
+            row.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            row.Margin = Padding.Empty;
+            return row;
+        }
+
+        private static void AddRowLabel(FlowLayoutPanel row, Label label)
+        {
+            label.Margin = new Padding(0, 11, 8, 0);
+            row.Controls.Add(label);
+        }
+
+        private static void AddRowControl(FlowLayoutPanel row, Control control, int rightMargin)
+        {
+            control.Margin = new Padding(0, 6, rightMargin, 0);
+            row.Controls.Add(control);
         }
 
         private static Label MakeLabel(string text, int x, int y)
@@ -247,6 +719,33 @@ namespace AIMusicGenerator
             label.AutoSize = true;
             label.Location = new Point(x, y);
             return label;
+        }
+
+        private void OnPromptHeightChanged(object sender, EventArgs e)
+        {
+            if (updatingPromptSize) return;
+            SetPromptHeight((int)numPromptHeight.Value);
+        }
+
+        private void SetPromptHeight(int height)
+        {
+            if (lowerControls == null || lowerControls.Count == 0) return;
+            const int minimumLog = 120;
+            int maxHeight = txtCaption.Height + Math.Max(0, txtLog.Height - minimumLog);
+            if (height > maxHeight) height = maxHeight;
+            height = Math.Max(60, Math.Min(260, height));
+            int delta = height - txtCaption.Height;
+            if (delta == 0) return;
+            updatingPromptSize = true;
+            txtCaption.Height = height;
+            numPromptHeight.Value = height;
+            updatingPromptSize = false;
+            foreach (Control control in lowerControls)
+                control.Top += delta;
+            txtLog.Height = Math.Max(minimumLog, txtLog.Height - delta);
+            lstHistory.Height = txtLog.Height;
+            lstHistory.Top = txtLog.Top;
+            PositionGrip();
         }
 
         private void OnAutoBpmChanged(object sender, EventArgs e)
@@ -266,6 +765,481 @@ namespace AIMusicGenerator
             if (numDuration.Value > limit) numDuration.Value = limit;
         }
 
+
+        private void OnPlay(object sender, EventArgs e)
+        {
+            PlaySelected();
+        }
+
+        private void PlaySelected()
+        {
+            string path = lastOutputFile;
+            if (path.Length == 0 && lstHistory.SelectedItem is HistoryItem)
+                path = ((HistoryItem)lstHistory.SelectedItem).Path;
+            if (path.Length == 0 || !File.Exists(path))
+            {
+                MessageBox.Show(this, "尚未選擇可播放的音檔。", "播放",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            try
+            {
+                if (loadedAudioPath != path) LoadAudio(path);
+                if (audioOutput != null) audioOutput.Play();
+                UpdatePlaybackUi();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "無法播放：" + ex.Message, "播放失敗",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void OnPlayPauseClick(object sender, EventArgs e)
+        {
+            if (audioOutput == null)
+            {
+                PlaySelected();
+                return;
+            }
+            if (audioOutput.PlaybackState == PlaybackState.Playing)
+                audioOutput.Pause();
+            else
+                audioOutput.Play();
+            UpdatePlaybackUi();
+        }
+
+        private void OnStopClick(object sender, EventArgs e)
+        {
+            if (audioOutput != null) audioOutput.Stop();
+            if (audioStream != null) audioStream.CurrentTime = TimeSpan.Zero;
+            seekBar.Value = 0;
+            waveform.Position = 0;
+            waveform.Invalidate();
+            lblTime.Text = "00:00 / " + FormatTime(audioStream == null ? TimeSpan.Zero : audioStream.TotalTime);
+            UpdatePlaybackUi();
+        }
+
+        private void OnSeekScroll(object sender, EventArgs e)
+        {
+            if (audioStream == null) return;
+            TimeSpan position = TimeSpan.FromSeconds(audioStream.TotalTime.TotalSeconds * seekBar.Value / 1000.0);
+            lblTime.Text = FormatTime(position) + " / " + FormatTime(audioStream.TotalTime);
+            if (!scrubbing) SeekTo(seekBar.Value / 1000.0);
+        }
+
+        private void OnWaveformSeek(double ratio)
+        {
+            SeekTo(ratio);
+        }
+
+        private void SeekTo(double ratio)
+        {
+            if (audioStream == null) return;
+            ratio = Math.Max(0.0, Math.Min(1.0, ratio));
+            audioStream.CurrentTime = TimeSpan.FromSeconds(audioStream.TotalTime.TotalSeconds * ratio);
+            seekBar.Value = (int)Math.Round(ratio * 1000);
+            waveform.Position = ratio;
+            waveform.Invalidate();
+            lblTime.Text = FormatTime(audioStream.CurrentTime) + " / " + FormatTime(audioStream.TotalTime);
+        }
+
+        private void LoadAudio(string path)
+        {
+            DisposeAudio();
+            audioStream = AudioTools.OpenReader(path);
+            audioOutput = new WaveOutEvent();
+            audioOutput.Init(audioStream);
+            audioOutput.PlaybackStopped += OnPlaybackStopped;
+            loadedAudioPath = path;
+            seekBar.Value = 0;
+            lblTime.Text = "00:00 / " + FormatTime(audioStream.TotalTime);
+            waveform.Peaks = null;
+            waveform.Duration = audioStream.TotalTime.TotalSeconds;
+            waveform.Position = 0;
+            waveform.Invalidate();
+            LoadWaveform(path);
+            playbackTimer.Start();
+            UpdatePlaybackUi();
+        }
+
+        private void DisposeAudio()
+        {
+            playbackTimer.Stop();
+            WaveOutEvent output = audioOutput;
+            audioOutput = null;
+            if (output != null)
+            {
+                try { output.PlaybackStopped -= OnPlaybackStopped; output.Stop(); }
+                catch (Exception) { }
+                output.Dispose();
+            }
+            if (audioStream != null)
+            {
+                audioStream.Dispose();
+                audioStream = null;
+            }
+            loadedAudioPath = "";
+        }
+
+        private void UpdatePlaybackUi()
+        {
+            bool playing = audioOutput != null && audioOutput.PlaybackState == PlaybackState.Playing;
+            btnPlayPause.Text = playing ? "暫停" : "播放";
+            btnPlayPause.Image = playing ? iconPause : iconPlay;
+        }
+
+        private void ApplyButtonIcons()
+        {
+            SetButtonIcon(btnGenerate, "sparkles");
+            SetButtonIcon(btnCancel, "x");
+            SetButtonIcon(btnOpen, "folder-open");
+            SetButtonIcon(btnPlay, "play");
+            SetButtonIcon(btnStop, "square");
+            iconPlay = LoadIcon("play");
+            iconPause = LoadIcon("pause");
+            btnPlayPause.Image = iconPlay;
+        }
+
+        private static Image LoadIcon(string name)
+        {
+            try
+            {
+                string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "icons", name + ".png");
+                if (File.Exists(path)) return Image.FromFile(path);
+            }
+            catch (Exception)
+            {
+            }
+            return null;
+        }
+
+        private static void SetButtonIcon(Button button, string name)
+        {
+            Image image = LoadIcon(name);
+            if (image == null) return;
+            button.Image = image;
+            button.ImageAlign = ContentAlignment.MiddleLeft;
+            button.TextImageRelation = TextImageRelation.ImageBeforeText;
+            button.Padding = new Padding(6, 0, 4, 0);
+        }
+
+        private void OnPlaybackTimer(object sender, EventArgs e)
+        {
+            if (audioStream == null) return;
+            if (!scrubbing)
+            {
+                TimeSpan total = audioStream.TotalTime;
+                TimeSpan position = audioStream.CurrentTime;
+                double ratio = total.TotalSeconds > 0 ? position.TotalSeconds / total.TotalSeconds : 0;
+                seekBar.Value = (int)Math.Round(Math.Max(0.0, Math.Min(1.0, ratio)) * 1000);
+                waveform.Position = ratio;
+                waveform.Invalidate();
+                lblTime.Text = FormatTime(position) + " / " + FormatTime(total);
+            }
+            UpdatePlaybackUi();
+        }
+
+        private void OnPlaybackStopped(object sender, StoppedEventArgs e)
+        {
+            if (IsDisposed) return;
+            try
+            {
+                BeginInvoke(new Action(delegate()
+                {
+                    UpdatePlaybackUi();
+                    if (audioStream != null &&
+                        audioStream.CurrentTime >= audioStream.TotalTime - TimeSpan.FromMilliseconds(200))
+                    {
+                        seekBar.Value = 0;
+                        waveform.Position = 0;
+                        waveform.Invalidate();
+                        lblTime.Text = "00:00 / " + FormatTime(audioStream.TotalTime);
+                    }
+                }));
+            }
+            catch (InvalidOperationException)
+            {
+            }
+        }
+
+        private void LoadWaveform(string path)
+        {
+            string target = path;
+            Thread worker = new Thread(delegate()
+            {
+                try
+                {
+                    double seconds;
+                    float[] peaks = AudioTools.BuildPeaks(target, 1024, out seconds);
+                    try
+                    {
+                        BeginInvoke(new Action(delegate()
+                        {
+                            if (loadedAudioPath != target) return;
+                            waveform.Peaks = peaks;
+                            waveform.Duration = seconds;
+                            waveform.Invalidate();
+                        }));
+                    }
+                    catch (InvalidOperationException)
+                    {
+                    }
+                }
+                catch (Exception)
+                {
+                }
+            });
+            worker.IsBackground = true;
+            worker.Start();
+        }
+
+        private static string FormatTime(TimeSpan value)
+        {
+            int minutes = (int)value.TotalMinutes;
+            return minutes.ToString("00") + ":" + value.Seconds.ToString("00");
+        }
+
+        private void HandleCoverThenTag(string path)
+        {
+            if (sdEnabled && sdModel.Length > 0)
+                StartSdCover(path);
+            else
+                TryTagOutput(path);
+        }
+
+        private void StartSdCover(string path)
+        {
+            AppendLog("=== 開始產生 SD 封面 ===");
+            SetStatus("正在產生 SD 封面...");
+            string target = path;
+            Thread worker = new Thread(delegate()
+            {
+                string cover = Path.ChangeExtension(target, ".cover.png");
+                try
+                {
+                    if (!SdCoverClient.EnsureApi(sdUrl, sdPath, delegate(string message)
+                    {
+                        AppendLog(message);
+                    }))
+                        throw new InvalidOperationException("SD API 無法啟動");
+                    if (sdModel.Length > 0) SdCoverClient.SelectModel(sdUrl, sdModel);
+                    string prompt = BuildCoverPrompt(target);
+                    SdCoverClient.GenerateCover(sdUrl, prompt,
+                        "text, watermark, logo, letters, blurry, low quality, deformed",
+                        sdSize, sdSize, sdSteps, cover);
+                    if (!File.Exists(cover))
+                        throw new InvalidOperationException("SD 未回傳圖片");
+                    BeginInvoke(new Action(delegate()
+                    {
+                        TryTagOutput(target, cover);
+                        AppendLog("=== SD 封面完成: " + cover + " ===");
+                        SetStatus("完成: " + Path.GetFileName(target) + "（SD 封面）");
+                        RefreshHistory();
+                    }));
+                }
+                catch (Exception ex)
+                {
+                    AppendLog("SD 封面失敗，使用預設封面: " + ex.Message);
+                    try
+                    {
+                        BeginInvoke(new Action(delegate()
+                        {
+                            TryTagOutput(target);
+                        }));
+                    }
+                    catch (InvalidOperationException) { }
+                }
+            });
+            worker.IsBackground = true;
+            worker.Start();
+        }
+
+        private string BuildCoverPrompt(string audioPath)
+        {
+            string caption = "";
+            try
+            {
+                string sidecar = Path.ChangeExtension(audioPath, ".json");
+                if (File.Exists(sidecar))
+                {
+                    Dictionary<string, object> data = serializer.Deserialize<Dictionary<string, object>>(
+                        File.ReadAllText(sidecar, Encoding.UTF8));
+                    object configValue;
+                    Dictionary<string, object> config = null;
+                    if (data.TryGetValue("config", out configValue))
+                        config = configValue as Dictionary<string, object>;
+                    if (config != null) caption = GetString(config, "caption", "");
+                }
+            }
+            catch (Exception) { }
+            if (caption.Length > 500) caption = caption.Substring(0, 500);
+            return (caption + ", album cover art, square composition, cinematic lighting, "
+                    + "warm elegant atmosphere, no text, no watermark, detailed, high quality").Trim();
+        }
+
+        private void TryTagOutput(string path, string coverOverride = null)
+        {
+            try
+            {
+                string sidecar = Path.ChangeExtension(path, ".json");
+                if (!File.Exists(sidecar)) return;
+                Dictionary<string, object> data = serializer.Deserialize<Dictionary<string, object>>(
+                    File.ReadAllText(sidecar, Encoding.UTF8));
+                Dictionary<string, object> config = null;
+                object configValue;
+                if (data.TryGetValue("config", out configValue)) config = configValue as Dictionary<string, object>;
+                long seed = 0;
+                object seedValue;
+                if (data.TryGetValue("actual_seed", out seedValue) && seedValue != null)
+                    seed = Convert.ToInt64(seedValue);
+                string prompt = "", bpm = "", key = "", format = "";
+                if (config != null)
+                {
+                    prompt = GetString(config, "caption", "");
+                    bpm = GetString(config, "bpm", "");
+                    key = GetString(config, "keyscale", "");
+                    format = GetString(config, "audio_format", "");
+                }
+                AudioTools.WriteTags(path, prompt, seed, bpm, key, format,
+                    string.IsNullOrEmpty(coverOverride) ? coverPath : coverOverride);
+                AppendLog("=== 已寫入音檔標籤（prompt/seed/bpm）===");
+            }
+            catch (Exception ex)
+            {
+                AppendLog("標籤寫入失敗: " + ex.Message);
+            }
+        }
+
+
+        private void OnHistoryDrawItem(object sender, DrawItemEventArgs e)
+        {
+            if (e.Index < 0) return;
+            bool selected = (e.State & DrawItemState.Selected) != 0;
+            Color background = selected
+                ? (ThemeManager.Dark ? Color.FromArgb(64, 56, 122) : Color.FromArgb(210, 228, 255))
+                : (ThemeManager.Dark ? Color.FromArgb(22, 24, 31) : Color.White);
+            using (SolidBrush brush = new SolidBrush(background))
+            {
+                e.Graphics.FillRectangle(brush, e.Bounds);
+            }
+            string text = lstHistory.Items[e.Index].ToString();
+            using (SolidBrush foreground = new SolidBrush(ThemeManager.Text))
+            {
+                e.Graphics.DrawString(text, e.Font, foreground,
+                    e.Bounds.X + 6, e.Bounds.Y + 4);
+            }
+        }
+
+        private void OnHistorySelected(object sender, EventArgs e)
+        {
+            if (lstHistory.SelectedItem is HistoryItem)
+            {
+                lastOutputFile = ((HistoryItem)lstHistory.SelectedItem).Path;
+                UpdateFileButtons();
+            }
+        }
+
+        private void UpdateFileButtons()
+        {
+            bool hasFile = lastOutputFile.Length > 0 && File.Exists(lastOutputFile);
+            btnPlay.Enabled = hasFile;
+            btnOpen.Enabled = !jobRunning && (hasFile || Directory.Exists(txtOutDir.Text.Trim()));
+        }
+
+        private void RefreshHistory()
+        {
+            string dir = txtOutDir.Text.Trim();
+            string selected = lastOutputFile;
+            lstHistory.BeginUpdate();
+            try
+            {
+                lstHistory.Items.Clear();
+                if (Directory.Exists(dir))
+                {
+                    List<FileInfo> files = new List<FileInfo>();
+                    foreach (FileInfo file in new DirectoryInfo(dir).GetFiles())
+                    {
+                        string ext = file.Extension.ToLowerInvariant();
+                        if (ext == ".wav" || ext == ".flac" || ext == ".mp3" ||
+                            ext == ".opus" || ext == ".aac")
+                            files.Add(file);
+                    }
+                    files.Sort(delegate(FileInfo a, FileInfo b)
+                    {
+                        return b.LastWriteTime.CompareTo(a.LastWriteTime);
+                    });
+                    int count = 0;
+                    foreach (FileInfo file in files)
+                    {
+                        lstHistory.Items.Add(new HistoryItem(file.FullName, BuildHistoryLabel(file)));
+                        if (++count >= 200) break;
+                    }
+                }
+            }
+            finally
+            {
+                lstHistory.EndUpdate();
+            }
+            if (selected.Length > 0)
+            {
+                for (int i = 0; i < lstHistory.Items.Count; i++)
+                {
+                    HistoryItem item = lstHistory.Items[i] as HistoryItem;
+                    if (item != null && string.Equals(item.Path, selected, StringComparison.OrdinalIgnoreCase))
+                    {
+                        lstHistory.SelectedIndex = i;
+                        break;
+                    }
+                }
+            }
+            UpdateFileButtons();
+        }
+
+        private string BuildHistoryLabel(FileInfo file)
+        {
+            string label = file.Name;
+            string sidecar = Path.ChangeExtension(file.FullName, ".json");
+            if (!File.Exists(sidecar)) return label;
+            try
+            {
+                Dictionary<string, object> data = serializer.Deserialize<Dictionary<string, object>>(
+                    File.ReadAllText(sidecar, Encoding.UTF8));
+                object configValue;
+                Dictionary<string, object> config = null;
+                if (data.TryGetValue("config", out configValue))
+                    config = configValue as Dictionary<string, object>;
+                long seed = 0;
+                object seedValue;
+                if (data.TryGetValue("actual_seed", out seedValue) && seedValue != null)
+                    seed = Convert.ToInt64(seedValue);
+                string prompt = config != null ? GetString(config, "caption", "") : "";
+                if (prompt.Length > 42) prompt = prompt.Substring(0, 42) + "…";
+                string labelText = file.Name + "  |  seed " + seed + "  |  " + prompt;
+                return labelText.Length > 70 ? labelText.Substring(0, 70) + "…" : labelText;
+            }
+            catch (Exception)
+            {
+                return label;
+            }
+        }
+
+        private sealed class HistoryItem
+        {
+            public readonly string Path;
+            private readonly string display;
+
+            public HistoryItem(string path, string display)
+            {
+                Path = path;
+                this.display = display;
+            }
+
+            public override string ToString()
+            {
+                return display;
+            }
+        }
         private void OnBrowse(object sender, EventArgs e)
         {
             using (FolderBrowserDialog dialog = new FolderBrowserDialog())
@@ -275,6 +1249,319 @@ namespace AIMusicGenerator
                 if (Directory.Exists(current)) dialog.SelectedPath = current;
                 if (dialog.ShowDialog(this) == DialogResult.OK)
                     txtOutDir.Text = dialog.SelectedPath;
+            }
+        }
+
+        private void OnAlbum(object sender, EventArgs e)
+        {
+            using (AlbumDialog dialog = new AlbumDialog(txtCaption.Text, (int)numDuration.Value))
+            {
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                List<Dictionary<string, object>> tracks = new List<Dictionary<string, object>>();
+                foreach (string raw in dialog.TrackText.Replace("\r\n", "\n").Split('\n'))
+                {
+                    string line = raw.Trim();
+                    if (line.Length == 0) continue;
+                    string[] parts = line.Split('|');
+                    string title = parts[0].Trim();
+                    string prompt = parts.Length > 1 && parts[1].Trim().Length > 0
+                        ? parts[1].Trim() : title;
+                    int duration = dialog.TrackDuration;
+                    if (parts.Length > 2) int.TryParse(parts[2].Trim(), out duration);
+                    if (duration < 10) duration = dialog.TrackDuration;
+                    Dictionary<string, object> track = new Dictionary<string, object>();
+                    track["title"] = title;
+                    track["prompt"] = prompt;
+                    track["duration"] = duration;
+                    tracks.Add(track);
+                }
+                if (tracks.Count == 0)
+                {
+                    MessageBox.Show(this, "沒有有效曲目。", "專輯");
+                    return;
+                }
+                string safeTitle = Regex.Replace(dialog.AlbumTitle, "[^\\w\\-\\u4e00-\\u9fff]+", "_");
+                string folder = Path.Combine(txtOutDir.Text.Trim(),
+                    "album_" + safeTitle + "_" + DateTime.Now.ToString("yyyyMMdd_HHmmss"));
+                Directory.CreateDirectory(folder);
+                txtOutDir.Text = folder;
+                SaveSettings();
+
+                Dictionary<string, object> shared = BuildConfig(
+                    Convert.ToString(tracks[0]["prompt"]), -1);
+                shared["output_dir"] = folder;
+                Dictionary<string, object> album = new Dictionary<string, object>();
+                album["album_title"] = dialog.AlbumTitle;
+                album["artist"] = dialog.Artist;
+                album["output_dir"] = folder;
+                album["shared"] = shared;
+                album["tracks"] = tracks;
+                string configPath = Path.Combine(Paths.TempDir,
+                    "album_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".json");
+                Directory.CreateDirectory(Paths.TempDir);
+                File.WriteAllText(configPath, serializer.Serialize(album), new UTF8Encoding(false));
+
+                if (daemon != null)
+                {
+                    albumStarting = true;
+                    KillDaemon();
+                    Thread.Sleep(1800);
+                }
+
+                try
+                {
+                    ProcessStartInfo psi = new ProcessStartInfo(Paths.PythonExe);
+                    psi.Arguments = "-u \"" + Paths.Backend + "\" --album \"" + configPath + "\"";
+                    psi.WorkingDirectory = Paths.Workspace;
+                    psi.UseShellExecute = false;
+                    psi.CreateNoWindow = true;
+                    psi.RedirectStandardOutput = true;
+                    psi.RedirectStandardError = true;
+                    albumProcess = new Process();
+                    albumProcess.StartInfo = psi;
+                    albumProcess.EnableRaisingEvents = true;
+                    albumProcess.OutputDataReceived += delegate(object s, DataReceivedEventArgs args)
+                    {
+                        if (args.Data != null) PostLine(args.Data, false);
+                    };
+                    albumProcess.ErrorDataReceived += delegate(object s, DataReceivedEventArgs args)
+                    {
+                        if (args.Data != null) PostLine(args.Data, true);
+                    };
+                    albumProcess.Exited += OnAlbumExited;
+                    albumProcess.Start();
+                    albumProcess.BeginOutputReadLine();
+                    albumProcess.BeginErrorReadLine();
+                    txtLog.Clear();
+                    AppendLog("=== 專輯製作開始：" + dialog.AlbumTitle + " / " + tracks.Count + " 首 ===");
+                    SetBusy(true);
+                    bar.Style = ProgressBarStyle.Marquee;
+                    SetStatus("專輯製作中...");
+                }
+                catch (Exception ex)
+                {
+                    albumProcess = null;
+                    albumStarting = false;
+                    SetBusy(false);
+                    MessageBox.Show(this, "無法啟動專輯生成：" + ex.Message, "專輯");
+                }
+            }
+        }
+
+        private void OnAlbumExited(object sender, EventArgs e)
+        {
+            if (closing || IsDisposed) return;
+            try { BeginInvoke(new Action(HandleAlbumExit)); }
+            catch (InvalidOperationException) { }
+        }
+
+        private void HandleAlbumExit()
+        {
+            Process finished = albumProcess;
+            albumProcess = null;
+            albumStarting = false;
+            int code = -1;
+            string folder = txtOutDir.Text.Trim();
+            if (finished != null)
+            {
+                try { finished.WaitForExit(); finished.WaitForExit(); code = finished.ExitCode; }
+                catch (Exception) { }
+                finished.Dispose();
+            }
+            SetBusy(false);
+            bar.Style = ProgressBarStyle.Blocks;
+            bar.Value = 0;
+            RefreshHistory();
+            List<string> files = new List<string>();
+            string firstPrompt = txtCaption.Text;
+            try
+            {
+                string albumJson = Path.Combine(folder, "album.json");
+                if (File.Exists(albumJson))
+                {
+                    Dictionary<string, object> meta = serializer.Deserialize<Dictionary<string, object>>(
+                        File.ReadAllText(albumJson, Encoding.UTF8));
+                    object tracksValue;
+                    if (meta.TryGetValue("tracks", out tracksValue))
+                    {
+                        object[] list = tracksValue as object[];
+                        if (list != null)
+                        {
+                            foreach (object item in list)
+                            {
+                                Dictionary<string, object> track = item as Dictionary<string, object>;
+                                if (track == null) continue;
+                                object fileValue;
+                                if (track.TryGetValue("file", out fileValue) && fileValue != null)
+                                    files.Add(Convert.ToString(fileValue));
+                                object promptValue;
+                                if (firstPrompt.Length == 0 && track.TryGetValue("prompt", out promptValue))
+                                    firstPrompt = Convert.ToString(promptValue);
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception) { }
+
+            if (sdEnabled && sdModel.Length > 0 && files.Count > 0)
+            {
+                StartAlbumCover(files, firstPrompt);
+                SetStatus("專輯完成，正在產生 SD 封面...");
+            }
+            else
+            {
+                foreach (string file in files) TryTagOutput(file);
+                SetStatus("專輯完成 (" + files.Count + " 首) exit=" + code);
+            }
+            AppendLog("=== 專輯完成：共 " + files.Count + " 首 ===");
+        }
+
+        private void StartAlbumCover(List<string> files, string prompt)
+        {
+            List<string> targets = new List<string>(files);
+            Thread worker = new Thread(delegate()
+            {
+                string folder = Path.GetDirectoryName(targets[0]);
+                string cover = Path.Combine(folder, "album_cover.png");
+                try
+                {
+                    if (!SdCoverClient.EnsureApi(sdUrl, sdPath, delegate(string message)
+                    {
+                        AppendLog(message);
+                    }))
+                        throw new InvalidOperationException("SD API 無法啟動");
+                    if (sdModel.Length > 0) SdCoverClient.SelectModel(sdUrl, sdModel);
+                    string coverPrompt = (prompt ?? "") +
+                        ", album cover art, square composition, cinematic lighting, warm atmosphere, "
+                        + "no text, no watermark, high quality";
+                    SdCoverClient.GenerateCover(sdUrl, coverPrompt,
+                        "text, watermark, logo, letters, blurry, low quality, deformed",
+                        sdSize, sdSize, sdSteps, cover);
+                    foreach (string file in targets) TryTagOutput(file, cover);
+                    try
+                    {
+                        BeginInvoke(new Action(delegate()
+                        {
+                            SetStatus("專輯完成，封面已寫入 " + targets.Count + " 首");
+                            RefreshHistory();
+                        }));
+                    }
+                    catch (InvalidOperationException) { }
+                }
+                catch (Exception ex)
+                {
+                    AppendLog("專輯 SD 封面失敗: " + ex.Message);
+                    foreach (string file in targets) TryTagOutput(file);
+                }
+            });
+            worker.IsBackground = true;
+            worker.Start();
+        }
+
+        private void OnTelegram(object sender, EventArgs e)
+        {
+            if (telegramProcess != null && !telegramProcess.HasExited)
+            {
+                MessageBox.Show(this, "Telegram bot 已在執行。", "Telegram",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            string script = Path.Combine(Paths.Workspace, "AI_Music", "scripts", "telegram_bot.py");
+            if (!File.Exists(script))
+            {
+                MessageBox.Show(this, "找不到 telegram_bot.py。", "Telegram",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+            try
+            {
+                ProcessStartInfo psi = new ProcessStartInfo(Paths.PythonExe);
+                psi.Arguments = "-u \"" + script + "\"";
+                psi.WorkingDirectory = Paths.Workspace;
+                psi.UseShellExecute = false;
+                psi.CreateNoWindow = true;
+                psi.RedirectStandardOutput = true;
+                psi.RedirectStandardError = true;
+                telegramProcess = new Process();
+                telegramProcess.StartInfo = psi;
+                telegramProcess.OutputDataReceived += delegate(object s, DataReceivedEventArgs args)
+                {
+                    if (args.Data != null) AppendLog("[tg] " + args.Data);
+                };
+                telegramProcess.ErrorDataReceived += delegate(object s, DataReceivedEventArgs args)
+                {
+                    if (args.Data != null) AppendLog("[tg] " + args.Data);
+                };
+                telegramProcess.Start();
+                telegramProcess.BeginOutputReadLine();
+                telegramProcess.BeginErrorReadLine();
+                AppendLog("=== Telegram bot 已啟動 ===");
+                SetStatus("Telegram bot 執行中");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "無法啟動 Telegram bot: " + ex.Message, "Telegram",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void OnSd(object sender, EventArgs e)
+        {
+            using (SdDialog dialog = new SdDialog(sdEnabled, sdUrl, sdPath, sdModel, sdSteps, sdSize))
+            {
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                sdEnabled = dialog.EnabledForCover;
+                sdUrl = dialog.ApiUrl;
+                sdPath = dialog.InstallPath;
+                sdModel = dialog.ModelTitle;
+                sdSteps = dialog.Steps;
+                sdSize = dialog.CoverSize;
+                SaveSettings();
+                AppendLog("=== SD 封面設定已更新：enabled=" + sdEnabled +
+                          " model=" + sdModel + " ===");
+            }
+        }
+
+        private void OnAdvanced(object sender, EventArgs e)
+        {
+            using (AdvancedDialog dialog = new AdvancedDialog(
+                negativePrompt, fadeInValue, fadeOutValue, shiftValue,
+                mp3BitrateValue, mp3SampleRateValue))
+            {
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                negativePrompt = dialog.NegativePrompt;
+                fadeInValue = dialog.FadeIn;
+                fadeOutValue = dialog.FadeOut;
+                shiftValue = dialog.Shift;
+                mp3BitrateValue = dialog.Mp3Bitrate;
+                mp3SampleRateValue = dialog.Mp3SampleRate;
+                SaveSettings();
+                AppendLog("=== 已更新進階音樂設定 ===");
+            }
+        }
+
+        private void OnLinkPrompt(object sender, EventArgs e)
+        {
+            using (LinkPromptDialog dialog = new LinkPromptDialog())
+            {
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                txtCaption.Text = dialog.SuggestedPrompt;
+                AppendLog("=== 已套用參考連結提示詞（metadata 分析）===");
+            }
+        }
+
+        private void OnCover(object sender, EventArgs e)
+        {
+            using (OpenFileDialog dialog = new OpenFileDialog())
+            {
+                dialog.Title = "選擇封面圖片";
+                dialog.Filter = "圖片|*.png;*.jpg;*.jpeg|所有檔案|*.*";
+                if (File.Exists(coverPath)) dialog.FileName = coverPath;
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                coverPath = dialog.FileName;
+                SaveSettings();
+                AppendLog("封面圖片: " + coverPath);
             }
         }
 
@@ -290,6 +1577,34 @@ namespace AIMusicGenerator
             Process.Start("explorer.exe", Paths.Quote(dir));
         }
 
+        private Dictionary<string, object> BuildConfig(string prompt, int seed)
+        {
+            Dictionary<string, object> config = new Dictionary<string, object>();
+            config["caption"] = prompt;
+            config["lyrics"] = txtLyrics.Text.Trim().Length == 0 ? "[Instrumental]" : txtLyrics.Text.Trim();
+            config["instrumental"] = chkInstrumental.Checked;
+            config["thinking"] = chkThinking.Checked;
+            config["bpm"] = chkAutoBpm.Checked ? null : (object)(int)numBpm.Value;
+            config["duration"] = (double)numDuration.Value;
+            config["inference_steps"] = (int)numSteps.Value;
+            config["guidance_scale"] = (double)numGuidance.Value;
+            config["keyscale"] = comboKey.SelectedIndex <= 0 ? "" : Convert.ToString(comboKey.SelectedItem);
+            config["timesignature"] = comboSignature.SelectedIndex <= 0 ? "" : Convert.ToString(comboSignature.SelectedItem);
+            config["vocal_language"] = Convert.ToString(comboLanguage.SelectedItem);
+            config["audio_format"] = Convert.ToString(comboFormat.SelectedItem);
+            config["offload_mode"] = Convert.ToString(comboOffload.SelectedItem);
+            config["lm_negative_prompt"] = negativePrompt;
+            config["fade_in_duration"] = (double)fadeInValue;
+            config["fade_out_duration"] = (double)fadeOutValue;
+            config["shift"] = (double)shiftValue;
+            config["mp3_bitrate"] = mp3BitrateValue;
+            config["mp3_sample_rate"] = mp3SampleRateValue;
+            config["seed"] = seed;
+            config["output_dir"] = txtOutDir.Text.Trim();
+            config["filename_prefix"] = "ace";
+            return config;
+        }
+
         private void OnGenerate(object sender, EventArgs e)
         {
             if (jobRunning) return;
@@ -297,7 +1612,7 @@ namespace AIMusicGenerator
             string caption = txtCaption.Text.Trim();
             if (caption.Length == 0)
             {
-                MessageBox.Show(this, "請輸入音樂描述。", "缺少描述", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(this, "請輸入提示詞。", "缺少提示詞", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
@@ -346,23 +1661,37 @@ namespace AIMusicGenerator
             cancelRequested = false;
             restartRequested = false;
 
-            Dictionary<string, object> config = new Dictionary<string, object>();
-            config["caption"] = caption;
-            config["lyrics"] = txtLyrics.Text.Trim().Length == 0 ? "[Instrumental]" : txtLyrics.Text.Trim();
-            config["instrumental"] = chkInstrumental.Checked;
-            config["thinking"] = chkThinking.Checked;
-            config["bpm"] = chkAutoBpm.Checked ? null : (object)(int)numBpm.Value;
-            config["duration"] = (double)numDuration.Value;
-            config["inference_steps"] = (int)numSteps.Value;
-            config["guidance_scale"] = (double)numGuidance.Value;
-            config["keyscale"] = comboKey.SelectedIndex <= 0 ? "" : Convert.ToString(comboKey.SelectedItem);
-            config["timesignature"] = comboSignature.SelectedIndex <= 0 ? "" : Convert.ToString(comboSignature.SelectedItem);
-            config["vocal_language"] = Convert.ToString(comboLanguage.SelectedItem);
-            config["audio_format"] = Convert.ToString(comboFormat.SelectedItem);
-            config["offload_mode"] = Convert.ToString(comboOffload.SelectedItem);
-            config["seed"] = seed;
-            config["output_dir"] = txtOutDir.Text.Trim();
-            config["filename_prefix"] = "ace";
+            batchQueue.Clear();
+            batchActive = false;
+            if (chkBatch.Checked)
+            {
+                string[] rawLines = txtCaption.Text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+                List<string> prompts = new List<string>();
+                foreach (string rawLine in rawLines)
+                {
+                    string promptLine = rawLine.Trim();
+                    if (promptLine.Length > 0) prompts.Add(promptLine);
+                }
+                if (prompts.Count == 0)
+                {
+                    MessageBox.Show(this, "批次模式需要每行一個提示詞。", "缺少提示詞",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                batchActive = true;
+                batchTotal = prompts.Count;
+                batchCompleted = 0;
+                batchErrors = 0;
+                for (int i = 0; i < prompts.Count; i++)
+                {
+                    int jobSeed = seed < 0 ? -1 : seed + i;
+                    batchQueue.Enqueue(BuildConfig(prompts[i], jobSeed));
+                }
+            }
+
+            Dictionary<string, object> config = batchActive
+                ? batchQueue.Dequeue()
+                : BuildConfig(caption, seed);
 
             jobRunning = true;
             jobStarted = DateTime.Now;
@@ -458,6 +1787,16 @@ namespace AIMusicGenerator
             if (daemon == null) return;
             cancelRequested = true;
             restartRequested = false;
+            batchActive = false;
+            batchQueue.Clear();
+            if (chkKeepModel.Checked && daemonReady)
+            {
+                softCancel = true;
+                SetStatus("已取消（背景收尾中，模型保留）");
+                AppendLog("=== 已取消；目前工作會在背景完成，模型保持載入 ===");
+                return;
+            }
+            softCancel = false;
             SetStatus("正在取消...");
             AppendLog("=== 已送出取消指令（模型將卸載，下次需重新載入）===");
             KillDaemon();
@@ -552,6 +1891,46 @@ namespace AIMusicGenerator
                 int code = 1;
                 int marker = clean.IndexOf("code=", StringComparison.Ordinal);
                 if (marker >= 0) int.TryParse(clean.Substring(marker + 5).Trim(), out code);
+
+                if (batchActive && !cancelRequested)
+                {
+                    if (code == 0) batchCompleted++; else batchErrors++;
+                    exitCode = code;
+                    exitOk = code == 0;
+                    AppendLog("=== 批次進度 " + (batchCompleted + batchErrors) + "/" + batchTotal +
+                              (code == 0 ? " 完成" : " 失敗 (exit " + code + ")") + " ===");
+                    if (batchQueue.Count > 0)
+                    {
+                        Dictionary<string, object> next = batchQueue.Dequeue();
+                        bar.Style = ProgressBarStyle.Marquee;
+                        bar.Value = 0;
+                        jobRunning = true;
+                        SetBusy(true);
+                        if (daemonReady)
+                        {
+                            SendJob(next);
+                        }
+                        else
+                        {
+                            pendingConfig = next;
+                            StartDaemon(Convert.ToString(next["offload_mode"]));
+                        }
+                        SetStatus("批次 " + (batchCompleted + batchErrors + 1) + "/" + batchTotal + " 生成中...");
+                        return;
+                    }
+                    batchActive = false;
+                    jobRunning = false;
+                    elapsedTimer.Stop();
+                    bar.Style = ProgressBarStyle.Blocks;
+                    bar.Value = 0;
+                    SetBusy(false);
+                    SetStatus("批次完成 " + batchCompleted + "/" + batchTotal +
+                              (batchErrors > 0 ? "，失敗 " + batchErrors : ""));
+                    AppendLog("=== 批次完成：成功 " + batchCompleted + "，失敗 " + batchErrors + " ===");
+                    RefreshHistory();
+                    return;
+                }
+
                 jobRunning = false;
                 exitCode = code;
                 exitOk = code == 0;
@@ -593,6 +1972,15 @@ namespace AIMusicGenerator
 
         private void HandleDaemonExit()
         {
+            if (albumStarting)
+            {
+                albumStarting = false;
+                Process old = daemon;
+                daemon = null;
+                daemonReady = false;
+                if (old != null) { try { old.WaitForExit(); old.WaitForExit(); old.Dispose(); } catch (Exception) { } }
+                return;
+            }
             Process finished = daemon;
             daemon = null;
             daemonReady = false;
@@ -661,17 +2049,22 @@ namespace AIMusicGenerator
             finishTimer.Stop();
             if (cancelRequested)
             {
-                SetStatus("已取消");
+                SetStatus(softCancel ? "已取消（模型保留）" : "已取消");
                 cancelRequested = false;
+                softCancel = false;
+                RefreshHistory();
                 return;
             }
             if (exitOk && lastOutputFile.Length > 0)
             {
+                HandleCoverThenTag(lastOutputFile);
+                RefreshHistory();
                 SetStatus("完成: " + Path.GetFileName(lastOutputFile));
                 AppendLog("=== 完成: " + lastOutputFile + " ===");
             }
             else if (exitOk)
             {
+                RefreshHistory();
                 SetStatus("完成（請到輸出資料夾查看）");
                 AppendLog("=== 完成 ===");
             }
@@ -729,6 +2122,9 @@ namespace AIMusicGenerator
             comboOffload.Enabled = !busy;
             chkInstrumental.Enabled = !busy;
             chkThinking.Enabled = !busy;
+            chkKeepModel.Enabled = !busy;
+            chkBatch.Enabled = !busy;
+            UpdateFileButtons();
         }
 
         private void EnqueueLog(string text)
@@ -911,8 +2307,35 @@ namespace AIMusicGenerator
             txtLyrics.Text = GetString(s, "lyrics", "[Instrumental]");
             txtOutDir.Text = GetString(s, "output_dir", Paths.Generated);
             txtSeed.Text = GetString(s, "seed", "");
+            ThemeManager.SetTheme(GetBool(s, "theme_dark", true));
+            updatingPromptSize = true;
+            comboTheme.SelectedIndex = ThemeManager.Dark ? 0 : 1;
+            promptWidth = (int)Clamp(GetDecimal(s, "prompt_width", 1476m), 300m,
+                Math.Max(300m, ClientSize.Width - txtCaption.Left - 24));
+            txtCaption.Width = promptWidth;
+            updatingPromptSize = false;
+            ApplyTheme();
+            PositionGrip();
+            negativePrompt = GetString(s, "lm_negative_prompt", "");
+            fadeInValue = Clamp(GetDecimal(s, "fade_in_duration", 0m), 0m, 30m);
+            fadeOutValue = Clamp(GetDecimal(s, "fade_out_duration", 0m), 0m, 30m);
+            shiftValue = Clamp(GetDecimal(s, "shift", 1.0m), 0.5m, 10m);
+            mp3BitrateValue = GetString(s, "mp3_bitrate", "128k");
+            mp3SampleRateValue = (int)Clamp(GetDecimal(s, "mp3_sample_rate", 48000m), 44100m, 48000m);
+            sdEnabled = GetBool(s, "sd_enabled", false);
+            sdUrl = GetString(s, "sd_url", "http://127.0.0.1:7860");
+            sdPath = GetString(s, "sd_path", @"G:\stable-diffusion-webui");
+            sdModel = GetString(s, "sd_model", "");
+            sdSteps = (int)Clamp(GetDecimal(s, "sd_steps", 20m), 8m, 40m);
+            sdSize = (int)Clamp(GetDecimal(s, "sd_size", 512m), 512m, 768m);
+            int promptHeight = (int)Clamp(GetDecimal(s, "prompt_height", 110m), 60m, 260m);
+            numPromptHeight.Value = promptHeight;
+            SetPromptHeight(promptHeight);
+            coverPath = GetString(s, "cover_path", Paths.CoverFile);
+            if (!File.Exists(coverPath)) coverPath = "";
             chkInstrumental.Checked = GetBool(s, "instrumental", true);
             chkThinking.Checked = GetBool(s, "thinking", true);
+            chkKeepModel.Checked = GetBool(s, "keep_model_on_cancel", false);
             chkAutoBpm.Checked = GetBool(s, "auto_bpm", true);
             SelectCombo(comboKey, GetString(s, "keyscale", ""));
             SelectCombo(comboSignature, GetString(s, "timesignature", ""));
@@ -938,6 +2361,22 @@ namespace AIMusicGenerator
                 s["lyrics"] = txtLyrics.Text;
                 s["output_dir"] = txtOutDir.Text;
                 s["seed"] = txtSeed.Text;
+                s["prompt_height"] = (int)numPromptHeight.Value;
+                s["theme_dark"] = ThemeManager.Dark;
+                s["prompt_width"] = promptWidth;
+                s["lm_negative_prompt"] = negativePrompt;
+                s["fade_in_duration"] = (double)fadeInValue;
+                s["fade_out_duration"] = (double)fadeOutValue;
+                s["shift"] = (double)shiftValue;
+                s["mp3_bitrate"] = mp3BitrateValue;
+                s["mp3_sample_rate"] = mp3SampleRateValue;
+                s["sd_enabled"] = sdEnabled;
+                s["sd_url"] = sdUrl;
+                s["sd_path"] = sdPath;
+                s["sd_model"] = sdModel;
+                s["sd_steps"] = sdSteps;
+                s["sd_size"] = sdSize;
+                s["cover_path"] = coverPath;
                 s["bpm"] = (int)numBpm.Value;
                 s["auto_bpm"] = chkAutoBpm.Checked;
                 s["duration"] = (double)numDuration.Value;
@@ -950,6 +2389,7 @@ namespace AIMusicGenerator
                 s["offload_mode"] = Convert.ToString(comboOffload.SelectedItem);
                 s["instrumental"] = chkInstrumental.Checked;
                 s["thinking"] = chkThinking.Checked;
+                s["keep_model_on_cancel"] = chkKeepModel.Checked;
                 File.WriteAllText(Paths.SettingsFile, serializer.Serialize(s), new UTF8Encoding(false));
             }
             catch (Exception)
@@ -1013,11 +2453,128 @@ namespace AIMusicGenerator
         }
 
 
-        internal void StartUiTest()
+        internal void StartSingleUiTest()
         {
             Shown += delegate
             {
                 WindowState = FormWindowState.Minimized;
+                uiTestTimer = new WinTimer();
+                uiTestTimer.Interval = 1500;
+                uiTestTimer.Tick += OnSingleUiTestTick;
+                uiTestTimer.Start();
+            };
+        }
+
+        private void OnSingleUiTestTick(object sender, EventArgs e)
+        {
+            uiTestTicks++;
+            try
+            {
+                if (uiTestState == 0)
+                {
+                    uiTestState = 1;
+                    AppendLog("=== UI TEST SINGLE: generate ===");
+                    OnGenerate(this, EventArgs.Empty);
+                    return;
+                }
+                if (uiTestState == 1)
+                {
+                    string cover = lastOutputFile.Length > 0
+                        ? Path.ChangeExtension(lastOutputFile, ".cover.png") : "";
+                    if (cover.Length > 0 && File.Exists(cover))
+                    {
+                        FinishUiTest(0);
+                        return;
+                    }
+                    if (lblStatus.Text.Contains("SD 封面失敗") ||
+                        lblStatus.Text.Contains("失敗 (exit") ||
+                        lblStatus.Text.Contains("錯誤:"))
+                    {
+                        FinishUiTest(2);
+                        return;
+                    }
+                    if (uiTestTicks > 900) FinishUiTest(3);
+                }
+            }
+            catch (Exception ex)
+            {
+                AppendLog("UI TEST SINGLE error: " + ex.Message);
+                FinishUiTest(4);
+            }
+        }
+
+        internal string UiSelfTest()
+        {
+            StringBuilder report = new StringBuilder();
+            try
+            {
+                ThemeManager.SetTheme(false);
+                ApplyTheme();
+                report.AppendLine("light_form=" + BackColor.ToArgb() +
+                                  " input=" + txtCaption.BackColor.ToArgb() +
+                                  " button=" + btnGenerate.BackColor.ToArgb());
+                ThemeManager.SetTheme(true);
+                ApplyTheme();
+                report.AppendLine("dark_form=" + BackColor.ToArgb() +
+                                  " input=" + txtCaption.BackColor.ToArgb() +
+                                  " button=" + btnGenerate.BackColor.ToArgb());
+                int oldWidth = txtCaption.Width;
+                int oldHeight = txtCaption.Height;
+                SetPromptWidth(700);
+                SetPromptHeight(200);
+                bool overlap = false;
+                foreach (Control control in lowerControls)
+                    if (control.Top < txtCaption.Bottom) overlap = true;
+                report.AppendLine("resize_width=" + txtCaption.Width +
+                                  " resize_height=" + txtCaption.Height +
+                                  " log_height=" + txtLog.Height +
+                                  " overlap=" + overlap +
+                                  " grip=" + resizeGrip.Left + "," + resizeGrip.Top);
+                SetPromptWidth(oldWidth);
+                SetPromptHeight(oldHeight);
+                report.AppendLine("restored_width=" + txtCaption.Width +
+                                  " restored_height=" + txtCaption.Height);
+            }
+            catch (Exception ex)
+            {
+                report.AppendLine("error=" + ex);
+            }
+            return report.ToString();
+        }
+
+        internal string PlayerTest(string path)
+        {
+            LoadAudio(path);
+            audioOutput.Volume = 0f;
+            audioOutput.Play();
+            System.Threading.Thread.Sleep(900);
+            string result = "state=" + audioOutput.PlaybackState +
+                            " position=" + audioStream.CurrentTime.TotalSeconds.ToString("F2") +
+                            " duration=" + audioStream.TotalTime.TotalSeconds.ToString("F2");
+            DisposeAudio();
+            return result;
+        }
+
+        internal string StyleReport()
+        {
+            return string.Format("multiline={0} wordwrap={1} width={2} client={3} font={4} textlen={5} lines={6} capH={7} logH={8}",
+                txtCaption.Multiline, txtCaption.WordWrap, txtCaption.Width, txtCaption.ClientSize.Width,
+                txtCaption.Font.Height, txtCaption.TextLength, txtCaption.Lines.Length, txtCaption.Height, txtLog.Height) +
+                string.Format(" scroll={0}", txtCaption.ScrollBars) +
+                string.Format(" size={0} client={1} scale={2} dims={3} current={4}", Size, ClientSize, AutoScaleMode, AutoScaleDimensions, CurrentAutoScaleDimensions);
+        }
+
+        internal void StartUiTest(bool batch)
+        {
+            uiTestBatch = batch;
+            Shown += delegate
+            {
+                WindowState = FormWindowState.Minimized;
+                if (batch)
+                {
+                    txtCaption.Text = "Warm lo-fi piano instrumental, no vocals.\r\nMellow acoustic guitar instrumental, no vocals.";
+                    chkBatch.Checked = true;
+                }
                 uiTestTimer = new WinTimer();
                 uiTestTimer.Interval = 1000;
                 uiTestTimer.Tick += OnUiTestTick;
@@ -1039,6 +2596,12 @@ namespace AIMusicGenerator
                 }
                 else if (uiTestState == 1)
                 {
+                    if (uiTestBatch)
+                    {
+                        if (lblStatus.Text.Contains("批次完成")) { FinishUiTest(0); return; }
+                        if (uiTestTicks > 900 || lblStatus.Text.Contains("失敗")) { FinishUiTest(2); return; }
+                        return;
+                    }
                     if (lblStatus.Text.Contains("完成:"))
                     {
                         uiTestState = 2;
@@ -1101,6 +2664,12 @@ namespace AIMusicGenerator
         private void OnFormClosing(object sender, FormClosingEventArgs e)
         {
             closing = true;
+            if (telegramProcess != null && !telegramProcess.HasExited)
+            {
+                try { telegramProcess.Kill(); } catch (Exception) { }
+            }
+            SdCoverClient.Stop();
+            DisposeAudio();
             finishTimer.Stop();
             logTimer.Stop();
             elapsedTimer.Stop();

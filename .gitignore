@@ -17,3 +17,7 @@ AI_Music/AI_Music_code_bundle_*.txt
 *.flac
 *.mp3
 *.safetensors
+
+*.dll
+AI_Music/app/lib/
+.cache/
