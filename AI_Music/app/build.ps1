@@ -1,0 +1,31 @@
+﻿param(
+    [switch]$Preflight
+)
+
+$ErrorActionPreference = 'Stop'
+$appDir = $PSScriptRoot
+$csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+if (-not (Test-Path -LiteralPath $csc)) { throw "csc.exe not found: $csc" }
+
+$sources = @(Get-ChildItem -LiteralPath (Join-Path $appDir 'src') -Filter '*.cs' |
+    Sort-Object Name | ForEach-Object { $_.FullName })
+if ($sources.Count -eq 0) { throw "no .cs files under $appDir\src" }
+
+$exe = Join-Path $appDir 'AIMusicGenerator.exe'
+$manifest = Join-Path $appDir 'app.manifest'
+& $csc /nologo /codepage:65001 /target:winexe /optimize+ "/out:$exe" `
+    /r:System.dll /r:System.Core.dll /r:System.Windows.Forms.dll `
+    /r:System.Drawing.dll /r:System.Web.Extensions.dll "/win32manifest:$manifest" $sources
+if ($LASTEXITCODE -ne 0) { throw "compile failed: $LASTEXITCODE" }
+
+& $exe --selftest
+if ($LASTEXITCODE -ne 0) { throw "selftest failed: $LASTEXITCODE" }
+
+if ($Preflight) {
+    $python = Join-Path (Split-Path -Parent $appDir) '..\AI_Music.venv\Scripts\python.exe'
+    $backend = Join-Path $appDir 'generate_backend.py'
+    & $python $backend --preflight
+    if ($LASTEXITCODE -ne 0) { throw "preflight failed: $LASTEXITCODE" }
+}
+
+Write-Host "OK: $exe"

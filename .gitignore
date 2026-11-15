@@ -1,0 +1,19 @@
+# Model weights, caches and generated media are never committed.
+AI_Music.venv/
+AI_Music/ACE-Step-1.5/
+AI_Music/models/
+AI_Music/wheels/
+AI_Music/generated/
+AI_Music/logs/
+AI_Music/tools/
+AI_Music/.cache/
+AI_Music/.hf-cache/
+AI_Music/.uv-cache/
+AI_Music/.xet-test/
+AI_Music/**/__pycache__/
+AI_Music/AI_Music_code_bundle_*.txt
+*.exe
+*.wav
+*.flac
+*.mp3
+*.safetensors
