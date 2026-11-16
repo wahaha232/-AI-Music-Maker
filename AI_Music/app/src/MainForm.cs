@@ -1392,11 +1392,11 @@ namespace AIMusicGenerator
                         "text, watermark, logo, letters, blurry, low quality, deformed",
                         sdSize, sdSize, sdSteps, cover);
                     SdCoverClient.UnloadCheckpoint(sdUrl);
-                    foreach (string file in targets) TryTagOutput(file, cover);
                     try
                     {
                         BeginInvoke(new Action(delegate()
                         {
+                            foreach (string file in targets) TryTagOutput(file, cover);
                             SetStatus("專輯完成，封面已寫入 " + targets.Count + " 首");
                             RefreshHistory();
                         }));
@@ -1406,7 +1406,14 @@ namespace AIMusicGenerator
                 catch (Exception ex)
                 {
                     AppendLog("專輯 SD 封面失敗: " + ex.Message);
-                    foreach (string file in targets) TryTagOutput(file);
+                    try
+                    {
+                        BeginInvoke(new Action(delegate()
+                        {
+                            foreach (string file in targets) TryTagOutput(file);
+                        }));
+                    }
+                    catch (InvalidOperationException) { }
                 }
             });
             worker.IsBackground = true;
