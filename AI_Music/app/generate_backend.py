@@ -379,6 +379,13 @@ def run_job(dit, llm, cfg: dict) -> int:
         return 0
     finally:
         shutil.rmtree(run_dir, ignore_errors=True)
+        try:
+            import torch
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
 
 
 def release_models(dit, llm) -> None:

@@ -926,6 +926,7 @@ namespace AIMusicGenerator
                     SdCoverClient.GenerateCover(sdUrl, prompt,
                         "text, watermark, logo, letters, blurry, low quality, deformed",
                         sdSize, sdSize, sdSteps, cover);
+                    SdCoverClient.UnloadCheckpoint(sdUrl);
                     if (!File.Exists(cover))
                         throw new InvalidOperationException("SD 未回傳圖片");
                     BeginInvoke(new Action(delegate()
@@ -978,6 +979,12 @@ namespace AIMusicGenerator
 
         private void TryTagOutput(string path, string coverOverride = null)
         {
+            bool wasLoaded = audioStream != null &&
+                string.Equals(loadedAudioPath, path, StringComparison.OrdinalIgnoreCase);
+            bool wasPlaying = wasLoaded && audioOutput != null &&
+                audioOutput.PlaybackState == PlaybackState.Playing;
+            TimeSpan resume = wasLoaded ? audioStream.CurrentTime : TimeSpan.Zero;
+            if (wasLoaded) DisposeAudio();
             try
             {
                 string sidecar = Path.ChangeExtension(path, ".json");
@@ -1007,8 +1014,26 @@ namespace AIMusicGenerator
             {
                 AppendLog("標籤寫入失敗: " + ex.Message);
             }
+            finally
+            {
+                if (wasLoaded)
+                {
+                    try
+                    {
+                        LoadAudio(path);
+                        if (audioStream != null)
+                        {
+                            audioStream.CurrentTime = resume;
+                            if (wasPlaying && audioOutput != null) audioOutput.Play();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        AppendLog("重新載入播放失敗: " + ex.Message);
+                    }
+                }
+            }
         }
-
 
         private void OnHistoryDrawItem(object sender, DrawItemEventArgs e)
         {
@@ -1164,6 +1189,7 @@ namespace AIMusicGenerator
 
         private void OnAlbum(object sender, EventArgs e)
         {
+            if (jobRunning || (albumProcess != null && !albumProcess.HasExited)) return;
             using (AlbumDialog dialog = new AlbumDialog(txtCaption.Text, (int)numDuration.Value))
             {
                 if (dialog.ShowDialog(this) != DialogResult.OK) return;
@@ -1365,6 +1391,7 @@ namespace AIMusicGenerator
                     SdCoverClient.GenerateCover(sdUrl, coverPrompt,
                         "text, watermark, logo, letters, blurry, low quality, deformed",
                         sdSize, sdSize, sdSteps, cover);
+                    SdCoverClient.UnloadCheckpoint(sdUrl);
                     foreach (string file in targets) TryTagOutput(file, cover);
                     try
                     {
@@ -1534,7 +1561,7 @@ namespace AIMusicGenerator
 
         private void OnGenerate(object sender, EventArgs e)
         {
-            if (jobRunning) return;
+            if (jobRunning || (albumProcess != null && !albumProcess.HasExited)) return;
 
             string caption = txtCaption.Text.Trim();
             if (caption.Length == 0)
@@ -2071,6 +2098,10 @@ namespace AIMusicGenerator
             chkThinking.Enabled = !busy;
             chkKeepModel.Enabled = !busy;
             chkBatch.Enabled = !busy;
+            btnAlbum.Enabled = !busy;
+            btnSd.Enabled = !busy;
+            btnAdvanced.Enabled = !busy;
+            btnLink.Enabled = !busy;
             UpdateFileButtons();
         }
 
@@ -2611,6 +2642,19 @@ namespace AIMusicGenerator
         private void OnFormClosing(object sender, FormClosingEventArgs e)
         {
             closing = true;
+            if (albumProcess != null && !albumProcess.HasExited)
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo("taskkill",
+                        "/PID " + albumProcess.Id + " /T /F")
+                    {
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    });
+                }
+                catch (Exception) { }
+            }
             if (telegramProcess != null && !telegramProcess.HasExited)
             {
                 try { telegramProcess.Kill(); } catch (Exception) { }

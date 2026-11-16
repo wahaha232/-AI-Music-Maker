@@ -141,6 +141,17 @@ namespace AIMusicGenerator
             File.WriteAllBytes(outputPath, bytes);
         }
 
+        public static void UnloadCheckpoint(string url)
+        {
+            try
+            {
+                PostJson(url.TrimEnd('/') + "/sdapi/v1/unload-checkpoint", "{}", 30000);
+            }
+            catch (Exception)
+            {
+            }
+        }
+
         public static void Stop()
         {
             Process process = serverProcess;
