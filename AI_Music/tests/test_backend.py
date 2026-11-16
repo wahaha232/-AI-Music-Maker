@@ -36,17 +36,17 @@ class NormalizeConfigTests(unittest.TestCase):
         return backend.load_config(path)
 
     def test_bpm_boundaries(self):
-        for value in (20, 300):
+        for value in (30, 300):
             self.assertEqual(self._config(bpm=value)["bpm"], value)
-        for value in (19, 301):
+        for value in (29, 301):
             with self.assertRaises(ValueError):
                 self._config(bpm=value)
         self.assertIsNone(self._config(bpm=None)["bpm"])
 
     def test_duration_boundaries(self):
-        for value in (5, 600):
+        for value in (10, 600):
             self.assertEqual(self._config(duration=value)["duration"], float(value))
-        for value in (4, 601):
+        for value in (9, 601):
             with self.assertRaises(ValueError):
                 self._config(duration=value)
 

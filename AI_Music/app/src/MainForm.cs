@@ -53,6 +53,7 @@ namespace AIMusicGenerator
         private readonly Button btnAlbum = new Button();
         private Process albumProcess;
         private bool albumStarting;
+        private bool albumCancelled;
         private Process telegramProcess;
         private bool sdEnabled = false;
         private string sdUrl = "http://127.0.0.1:7860";
@@ -164,8 +165,6 @@ namespace AIMusicGenerator
             txtCaption.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             txtCaption.HandleCreated += delegate(object sender, EventArgs e)
             {
-                SendMessage(txtCaption.Handle, EM_SETCUEBANNER, (IntPtr)1,
-                    "描述風格、樂器、氛圍、節奏、人聲（純音樂可留歌詞 [Instrumental]）");
                 txtCaption.ScrollBars = RichTextBoxScrollBars.Vertical;
                 txtCaption.WordWrap = true;
             };
@@ -207,8 +206,8 @@ namespace AIMusicGenerator
             btnSd.SetBounds(578, 4, 84, 34);
             btnAdvanced.SetBounds(670, 4, 120, 34);
             btnLink.SetBounds(798, 4, 160, 34);
-            comboTheme.SetBounds(966, 4, 160, 32);
-            chkBatch.SetBounds(1134, 6, 340, 30);
+            comboTheme.SetBounds(966, 4, 180, 32);
+            chkBatch.SetBounds(1156, 6, 330, 30);
             btnLink.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             comboTheme.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             chkBatch.Anchor = AnchorStyles.Top | AnchorStyles.Left;
@@ -516,7 +515,10 @@ namespace AIMusicGenerator
         {
             ThemeManager.Apply(this);
             ThemeManager.StylePrimary(btnGenerate);
-            ThemeManager.StylePrimary(btnPlayPause);
+            ThemeManager.StyleSuccess(btnPlayPause);
+            ThemeManager.StyleSuccess(btnPlay);
+            ThemeManager.StyleDanger(btnStop);
+            ThemeManager.StyleDanger(btnCancel);
             lblStatus.ForeColor = ThemeManager.Dark
                 ? Color.FromArgb(148, 205, 255)
                 : Color.FromArgb(0, 100, 200);
@@ -581,110 +583,6 @@ namespace AIMusicGenerator
             resizeGrip.Left = txtCaption.Right - 16;
             resizeGrip.Top = txtCaption.Bottom - 16;
             resizeGrip.BringToFront();
-        }
-
-        private void ApplyThemeTo(Control control)
-        {
-            FlowLayoutPanel row = control as FlowLayoutPanel;
-            if (row != null)
-            {
-                row.BackColor = Color.Transparent;
-                foreach (Control child in row.Controls) ApplyThemeTo(child);
-                return;
-            }
-            Label label = control as Label;
-            if (label != null)
-            {
-                label.BackColor = Color.Transparent;
-                if (label != lblStatus) label.ForeColor = Color.FromArgb(188, 194, 208);
-                return;
-            }
-            RichTextBox richText = control as RichTextBox;
-            if (richText != null)
-            {
-                richText.BackColor = Color.FromArgb(30, 32, 40);
-                richText.ForeColor = Color.FromArgb(240, 242, 247);
-                richText.BorderStyle = BorderStyle.FixedSingle;
-                return;
-            }
-            TextBox textBox = control as TextBox;
-            if (textBox != null)
-            {
-                textBox.BackColor = Color.FromArgb(30, 32, 40);
-                textBox.ForeColor = Color.FromArgb(240, 242, 247);
-                textBox.BorderStyle = BorderStyle.FixedSingle;
-                return;
-            }
-            ListBox listBox = control as ListBox;
-            if (listBox != null)
-            {
-                listBox.BackColor = Color.FromArgb(22, 24, 31);
-                listBox.ForeColor = Color.FromArgb(226, 229, 238);
-                listBox.BorderStyle = BorderStyle.FixedSingle;
-                return;
-            }
-            ComboBox comboBox = control as ComboBox;
-            if (comboBox != null)
-            {
-                comboBox.BackColor = Color.FromArgb(30, 32, 40);
-                comboBox.ForeColor = Color.FromArgb(240, 242, 247);
-                comboBox.FlatStyle = FlatStyle.Flat;
-                return;
-            }
-            TrackBar trackBar = control as TrackBar;
-            if (trackBar != null)
-            {
-                trackBar.BackColor = Color.FromArgb(22, 24, 31);
-                trackBar.ForeColor = Color.FromArgb(188, 194, 208);
-                return;
-            }
-            WaveformPanel wave = control as WaveformPanel;
-            if (wave != null)
-            {
-                wave.BackColor = Color.FromArgb(22, 24, 31);
-                return;
-            }
-            NumericUpDown numeric = control as NumericUpDown;
-            if (numeric != null)
-            {
-                numeric.BackColor = Color.FromArgb(30, 32, 40);
-                numeric.ForeColor = Color.FromArgb(240, 242, 247);
-                numeric.BorderStyle = BorderStyle.FixedSingle;
-                return;
-            }
-            CheckBox checkBox = control as CheckBox;
-            if (checkBox != null)
-            {
-                checkBox.BackColor = Color.Transparent;
-                checkBox.ForeColor = Color.FromArgb(214, 219, 230);
-                return;
-            }
-            Button button = control as Button;
-            if (button != null)
-            {
-                StyleButton(button, button == btnGenerate);
-                return;
-            }
-        }
-
-        private static void StyleButton(Button button, bool primary)
-        {
-            button.FlatStyle = FlatStyle.Flat;
-            button.FlatAppearance.BorderSize = 1;
-            button.FlatAppearance.BorderColor = primary
-                ? Color.FromArgb(124, 92, 255)
-                : Color.FromArgb(58, 62, 75);
-            button.BackColor = primary
-                ? Color.FromArgb(108, 92, 231)
-                : Color.FromArgb(38, 41, 51);
-            button.ForeColor = Color.White;
-            button.Cursor = Cursors.Hand;
-            button.FlatAppearance.MouseOverBackColor = primary
-                ? Color.FromArgb(126, 110, 245)
-                : Color.FromArgb(48, 52, 64);
-            button.FlatAppearance.MouseDownBackColor = primary
-                ? Color.FromArgb(92, 78, 205)
-                : Color.FromArgb(32, 35, 44);
         }
 
         private static FlowLayoutPanel MakeRow(int y)
@@ -1117,17 +1015,29 @@ namespace AIMusicGenerator
             if (e.Index < 0) return;
             bool selected = (e.State & DrawItemState.Selected) != 0;
             Color background = selected
-                ? (ThemeManager.Dark ? Color.FromArgb(64, 56, 122) : Color.FromArgb(210, 228, 255))
-                : (ThemeManager.Dark ? Color.FromArgb(22, 24, 31) : Color.White);
+                ? (ThemeManager.Dark ? Color.FromArgb(49, 46, 129) : Color.FromArgb(224, 231, 255))
+                : (ThemeManager.Dark ? Color.FromArgb(26, 27, 35) : Color.White);
             using (SolidBrush brush = new SolidBrush(background))
             {
                 e.Graphics.FillRectangle(brush, e.Bounds);
+            }
+            if (selected)
+            {
+                using (SolidBrush indicator = new SolidBrush(Color.FromArgb(99, 102, 241)))
+                {
+                    e.Graphics.FillRectangle(indicator, e.Bounds.X, e.Bounds.Y, 3, e.Bounds.Height);
+                }
             }
             string text = lstHistory.Items[e.Index].ToString();
             using (SolidBrush foreground = new SolidBrush(ThemeManager.Text))
             {
                 e.Graphics.DrawString(text, e.Font, foreground,
-                    e.Bounds.X + 6, e.Bounds.Y + 4);
+                    e.Bounds.X + 8, e.Bounds.Y + 4);
+            }
+            using (Pen separator = new Pen(ThemeManager.Border))
+            {
+                e.Graphics.DrawLine(separator, e.Bounds.Left, e.Bounds.Bottom - 1,
+                    e.Bounds.Right, e.Bounds.Bottom - 1);
             }
         }
 
@@ -1301,11 +1211,13 @@ namespace AIMusicGenerator
                 Directory.CreateDirectory(Paths.TempDir);
                 File.WriteAllText(configPath, serializer.Serialize(album), new UTF8Encoding(false));
 
-                if (daemon != null)
+                albumCancelled = false;
+                Process oldDaemon = daemon;
+                if (oldDaemon != null)
                 {
                     albumStarting = true;
                     KillDaemon();
-                    Thread.Sleep(1800);
+                    try { oldDaemon.WaitForExit(1500); } catch (Exception) { }
                 }
 
                 try
@@ -1360,6 +1272,21 @@ namespace AIMusicGenerator
             Process finished = albumProcess;
             albumProcess = null;
             albumStarting = false;
+            if (albumCancelled)
+            {
+                albumCancelled = false;
+                if (finished != null)
+                {
+                    try { finished.WaitForExit(); finished.Dispose(); } catch (Exception) { }
+                }
+                SetBusy(false);
+                bar.Style = ProgressBarStyle.Blocks;
+                bar.Value = 0;
+                SetStatus("已取消專輯");
+                AppendLog("=== 專輯已取消 ===");
+                RefreshHistory();
+                return;
+            }
             int code = -1;
             string folder = txtOutDir.Text.Trim();
             if (finished != null)
@@ -1784,6 +1711,27 @@ namespace AIMusicGenerator
 
         private void OnCancel(object sender, EventArgs e)
         {
+            Process album = albumProcess;
+            if (album != null && !album.HasExited)
+            {
+                albumCancelled = true;
+                try
+                {
+                    Process.Start(new ProcessStartInfo("taskkill",
+                        "/PID " + album.Id + " /T /F")
+                    {
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    });
+                    AppendLog("=== 已送出取消專輯指令 ===");
+                    SetStatus("正在取消專輯...");
+                }
+                catch (Exception ex)
+                {
+                    AppendLog("取消專輯失敗: " + ex.Message);
+                }
+                return;
+            }
             if (daemon == null) return;
             cancelRequested = true;
             restartRequested = false;
@@ -2012,7 +1960,6 @@ namespace AIMusicGenerator
             {
                 try
                 {
-                    finished.WaitForExit();
                     finished.WaitForExit();
                     code = finished.ExitCode;
                 }

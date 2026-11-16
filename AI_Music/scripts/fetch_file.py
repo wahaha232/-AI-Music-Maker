@@ -116,7 +116,6 @@ def main() -> int:
     part_dir = out_path.with_name(f"{out_path.name}.{size}.{chunk_mb}mb.parts")
     part_dir.mkdir(parents=True, exist_ok=True)
     print(f"[fetch] parts dir     : {part_dir}", flush=True)
-    print(f"[fetch] parts dir     : {part_dir}", flush=True)
     print(f"[fetch] {out_path.name}: {human(float(size))} <- {args.url}", flush=True)
 
     chunks: List[Tuple[int, int, Path]] = []

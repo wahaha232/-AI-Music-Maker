@@ -26,16 +26,16 @@ namespace AIMusicGenerator
             Dark = dark;
             if (dark)
             {
-                FormBack = Color.FromArgb(30, 30, 46);
-                PanelBack = Color.FromArgb(49, 50, 68);
-                InputBack = Color.FromArgb(24, 24, 37);
-                Text = Color.FromArgb(205, 214, 244);
-                SubText = Color.FromArgb(166, 173, 200);
-                Border = Color.FromArgb(69, 71, 90);
-                Accent = Color.FromArgb(203, 166, 247);
-                AccentHover = Color.FromArgb(180, 190, 254);
-                AccentDown = Color.FromArgb(136, 57, 239);
-                LogBack = Color.FromArgb(24, 24, 37);
+                FormBack = Color.FromArgb(18, 18, 22);
+                PanelBack = Color.FromArgb(26, 27, 35);
+                InputBack = Color.FromArgb(13, 14, 18);
+                Text = Color.FromArgb(243, 244, 246);
+                SubText = Color.FromArgb(156, 163, 175);
+                Border = Color.FromArgb(46, 49, 66);
+                Accent = Color.FromArgb(79, 70, 229);
+                AccentHover = Color.FromArgb(99, 102, 241);
+                AccentDown = Color.FromArgb(67, 56, 202);
+                LogBack = Color.FromArgb(13, 14, 18);
             }
             else
             {
@@ -135,7 +135,6 @@ namespace AIMusicGenerator
                 ? Color.FromArgb(42, 45, 56) : Color.FromArgb(235, 235, 240);
             button.FlatAppearance.MouseDownBackColor = Dark
                 ? Color.FromArgb(36, 38, 48) : Color.FromArgb(225, 225, 230);
-            RoundButton(button);
         }
 
         public static void StylePrimary(Button button)
@@ -148,29 +147,30 @@ namespace AIMusicGenerator
             button.Cursor = Cursors.Hand;
             button.FlatAppearance.MouseOverBackColor = AccentHover;
             button.FlatAppearance.MouseDownBackColor = AccentDown;
-            RoundButton(button);
         }
 
-        private static void RoundButton(Button button)
+        public static void StyleSuccess(Button button)
         {
-            if (button.Width <= 0 || button.Height <= 0) return;
-            int radius = 8;
-            Rectangle bounds = new Rectangle(0, 0, button.Width, button.Height);
-            using (System.Drawing.Drawing2D.GraphicsPath path = new System.Drawing.Drawing2D.GraphicsPath())
-            {
-                int d = radius * 2;
-                path.AddArc(bounds.X, bounds.Y, d, d, 180, 90);
-                path.AddArc(bounds.Right - d, bounds.Y, d, d, 270, 90);
-                path.AddArc(bounds.Right - d, bounds.Bottom - d, d, d, 0, 90);
-                path.AddArc(bounds.X, bounds.Bottom - d, d, d, 90, 90);
-                path.CloseFigure();
-                button.Region = new Region(path);
-            }
-            if (button.Tag == null)
-            {
-                button.Tag = "rounded";
-                button.SizeChanged += delegate { RoundButton(button); };
-            }
+            button.FlatStyle = FlatStyle.Flat;
+            button.FlatAppearance.BorderSize = 1;
+            button.FlatAppearance.BorderColor = Color.FromArgb(5, 150, 105);
+            button.BackColor = Color.FromArgb(5, 150, 105);
+            button.ForeColor = Color.White;
+            button.Cursor = Cursors.Hand;
+            button.FlatAppearance.MouseOverBackColor = Color.FromArgb(16, 185, 129);
+            button.FlatAppearance.MouseDownBackColor = Color.FromArgb(4, 120, 87);
+        }
+
+        public static void StyleDanger(Button button)
+        {
+            button.FlatStyle = FlatStyle.Flat;
+            button.FlatAppearance.BorderSize = 1;
+            button.FlatAppearance.BorderColor = Color.FromArgb(220, 38, 38);
+            button.BackColor = Color.FromArgb(220, 38, 38);
+            button.ForeColor = Color.White;
+            button.Cursor = Cursors.Hand;
+            button.FlatAppearance.MouseOverBackColor = Color.FromArgb(239, 68, 68);
+            button.FlatAppearance.MouseDownBackColor = Color.FromArgb(185, 28, 28);
         }
 
         public static void ApplyDialog(Form form)

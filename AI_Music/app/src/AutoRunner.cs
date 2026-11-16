@@ -35,7 +35,6 @@ namespace AIMusicGenerator
                     process.BeginOutputReadLine();
                     process.BeginErrorReadLine();
                     process.WaitForExit();
-                    process.WaitForExit();
                     exitCode = process.ExitCode;
                 }
                 writer.WriteLine("[auto] exit=" + exitCode);
