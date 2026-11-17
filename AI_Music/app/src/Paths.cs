@@ -172,7 +172,8 @@ namespace AIMusicGenerator
         public static ProcessStartInfo BuildDaemonStartInfo(string offloadMode)
         {
             return CreatePythonStartInfo(
-                "-u " + Quote(Backend) + " --daemon --offload-mode " + Quote(offloadMode), true);
+                "-u " + Quote(Backend) + " --daemon --offload-mode " + Quote(offloadMode) +
+                " --gpu-wait 20", true);
         }
 
         public static ProcessStartInfo BuildLimitsStartInfo()

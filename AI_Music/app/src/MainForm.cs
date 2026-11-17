@@ -770,6 +770,26 @@ namespace AIMusicGenerator
             if (numDuration.Value > 7200) numDuration.Value = 7200;
         }
 
+        private bool ConfirmLongDuration(double seconds, bool album)
+        {
+            if (!chkThinking.Checked || seconds <= maxDurationWithLm) return true;
+            if (uiTestTimer != null) return true;
+            string message =
+                (album ? "專輯中最長曲目" : "目前時長") + "為 " + (int)seconds + " 秒，" +
+                "超過 LM 思考的建議上限 " + maxDurationWithLm + " 秒。\n" +
+                "可能因 VRAM 不足而失敗。\n\n" +
+                "是：關閉 LM 思考後繼續\n否：照原設定繼續\n取消：不生成";
+            DialogResult result = MessageBox.Show(this, message, "時長超過建議上限",
+                MessageBoxButtons.YesNoCancel, MessageBoxIcon.Warning);
+            if (result == DialogResult.Cancel) return false;
+            if (result == DialogResult.Yes)
+            {
+                chkThinking.Checked = false;
+                AppendLog("=== 已關閉 LM 思考以降低 VRAM 風險 ===");
+            }
+            return true;
+        }
+
         private void OnExpandPrompt(object sender, EventArgs e)
         {
             using (PromptEditorDialog dialog = new PromptEditorDialog(txtCaption.Text))
@@ -1447,8 +1467,12 @@ namespace AIMusicGenerator
             {
                 if (dialog.ShowDialog(this) != DialogResult.OK) return;
                 List<Dictionary<string, object>> tracks = new List<Dictionary<string, object>>();
+                List<string> tooLong = new List<string>();
+                int longestTrack = 0;
+                int lineNumber = 0;
                 foreach (string raw in dialog.TrackText.Replace("\r\n", "\n").Split('\n'))
                 {
+                    lineNumber++;
                     string line = raw.Trim();
                     if (line.Length == 0) continue;
                     string[] parts = line.Split('|');
@@ -1458,17 +1482,33 @@ namespace AIMusicGenerator
                     int duration = dialog.TrackDuration;
                     if (parts.Length > 2) int.TryParse(parts[2].Trim(), out duration);
                     if (duration < 10) duration = dialog.TrackDuration;
+                    if (duration > 7200)
+                    {
+                        tooLong.Add("第 " + lineNumber + " 行: " + line +
+                            "（" + duration + " 秒）");
+                        continue;
+                    }
+                    if (duration > longestTrack) longestTrack = duration;
                     Dictionary<string, object> track = new Dictionary<string, object>();
                     track["title"] = title;
                     track["prompt"] = prompt;
                     track["duration"] = duration;
                     tracks.Add(track);
                 }
+                if (tooLong.Count > 0)
+                {
+                    MessageBox.Show(this,
+                        "以下曲目超過 7200 秒上限，請修正後再試：\n\n" +
+                        string.Join("\n", tooLong.ToArray()),
+                        "曲目長度錯誤", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
                 if (tracks.Count == 0)
                 {
                     MessageBox.Show(this, "沒有有效曲目。", "專輯");
                     return;
                 }
+                if (!ConfirmLongDuration(longestTrack, true)) return;
                 string safeTitle = Regex.Replace(dialog.AlbumTitle, "[^\\w\\-\\u4e00-\\u9fff]+", "_");
                 string folder = Path.Combine(txtOutDir.Text.Trim(),
                     "album_" + safeTitle + "_" + DateTime.Now.ToString("yyyyMMdd_HHmmss"));
@@ -1501,7 +1541,8 @@ namespace AIMusicGenerator
                 try
                 {
                     ProcessStartInfo psi = new ProcessStartInfo(Paths.PythonExe);
-                    psi.Arguments = "-u \"" + Paths.Backend + "\" --album \"" + configPath + "\"";
+                    psi.Arguments = "-u \"" + Paths.Backend + "\" --album \"" + configPath +
+                        "\" --gpu-wait 20";
                     psi.WorkingDirectory = Paths.Workspace;
                     psi.UseShellExecute = false;
                     psi.CreateNoWindow = true;
@@ -1580,6 +1621,16 @@ namespace AIMusicGenerator
             bar.Style = ProgressBarStyle.Blocks;
             bar.Value = 0;
             RefreshHistory();
+            if (code == 75)
+            {
+                SetStatus("GPU 使用中");
+                AppendLog("=== 專輯未啟動：GPU 使用中 ===");
+                MessageBox.Show(this,
+                    "GPU 正被其他生成程序使用（可能是 Telegram 遠端生成）。\n" +
+                    "請關閉其他生成程序後再試。",
+                    "GPU 使用中", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
             List<string> files = new List<string>();
             string firstPrompt = txtCaption.Text;
             try
@@ -1894,6 +1945,8 @@ namespace AIMusicGenerator
                 }
             }
 
+            if (!ConfirmLongDuration((double)numDuration.Value, false)) return;
+
             SaveSettings();
             finishTimer.Stop();
             lastOutputFile = "";
@@ -2131,6 +2184,12 @@ namespace AIMusicGenerator
             {
                 HandleProgress(clean.Substring(10).Trim());
             }
+            else if (clean.StartsWith("[busy]"))
+            {
+                string owner = clean.Substring(6).Trim();
+                SetStatus("GPU 使用中：" + owner);
+                AppendLog("=== GPU 使用中：" + owner + " ===");
+            }
             else if (clean.StartsWith("[error]"))
             {
                 SetStatus("錯誤: " + clean.Substring(7).Trim());
@@ -2298,7 +2357,16 @@ namespace AIMusicGenerator
             bar.Value = 0;
             SetBusy(false);
 
-            if (cancelRequested)
+            if (code == 75)
+            {
+                SetStatus("GPU 使用中");
+                AppendLog("=== GPU 使用中，模型未啟動 ===");
+                MessageBox.Show(this,
+                    "GPU 正被其他生成程序使用（可能是 Telegram 遠端生成）。\n" +
+                    "請關閉其他生成程序後再試。",
+                    "GPU 使用中", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            else if (cancelRequested)
             {
                 SetStatus("已取消（模型已卸載）");
                 AppendLog("=== 已取消 ===");
@@ -2827,7 +2895,10 @@ namespace AIMusicGenerator
                 int oldSeconds = (int)numDuration.Value;
                 SetDurationFromSeconds(7200);
                 report.AppendLine("duration_max=" + numHours.Value + "h" + numMinutes.Value +
-                                  "m total=" + numDuration.Value);
+                                  "m" + numSeconds.Value + "s total=" + numDuration.Value);
+                SetDurationFromSeconds(30);
+                report.AppendLine("duration_30s=" + numHours.Value + "h" + numMinutes.Value +
+                                  "m" + numSeconds.Value + "s total=" + numDuration.Value);
                 SetDurationFromSeconds(oldSeconds);
                 report.AppendLine("style_templates=" + comboStyleTemplate.Items.Count);
                 int oldPrompt = txtCaption.Height;
@@ -2835,7 +2906,7 @@ namespace AIMusicGenerator
                 report.AppendLine("prompt_max_height=" + txtCaption.Height);
                 SetPromptHeight(oldPrompt);
                 report.AppendLine("duration_parts=" + numHours.Value + "h" + numMinutes.Value +
-                                  "m total=" + numDuration.Value);
+                                  "m" + numSeconds.Value + "s total=" + numDuration.Value);
                 comboStyleTemplate.SelectedIndex = 0;
                 OnApplyStyleTemplate(this, EventArgs.Empty);
                 report.AppendLine("template_apply=" + numBpm.Value + "|" +

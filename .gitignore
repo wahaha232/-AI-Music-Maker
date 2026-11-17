@@ -11,6 +11,8 @@ AI_Music/.hf-cache/
 AI_Music/.uv-cache/
 AI_Music/.xet-test/
 AI_Music/**/__pycache__/
+AI_Music/.gpu.lock
+AI_Music/.gpu.owner.json
 AI_Music/AI_Music_code_bundle_*.txt
 *.exe
 *.wav

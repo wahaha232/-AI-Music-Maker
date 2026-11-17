@@ -172,6 +172,16 @@ def format_duration(seconds: int) -> str:
     return f"{seconds // 60}:{seconds % 60:02d}"
 
 
+def busy_owner(log_path: Path) -> str:
+    try:
+        for line in log_path.read_text(encoding="utf-8", errors="replace").splitlines():
+            if line.startswith("[busy]"):
+                return line[6:].strip() or "unknown"
+    except Exception:
+        pass
+    return "unknown"
+
+
 def add_recent(path: Path) -> None:
     with recent_lock:
         recent.append(str(path))
@@ -280,6 +290,12 @@ def run_job(token: str, chat_id: int, prompt: str) -> None:
         if current["cancel"]:
             send(token, chat_id, "已取消生成。")
             return
+        if code == 75:
+            owner = busy_owner(log_path)
+            send(token, chat_id,
+                 f"GPU 正被使用中（{owner}）。若是電腦上的 AI Music Maker 常駐了模型，"
+                 "請關閉 App 釋放模型後再試。")
+            return
         produced = None
         for line in reversed(log_path.read_text(encoding="utf-8", errors="replace").splitlines()):
             if line.startswith("[done]"):
@@ -349,6 +365,12 @@ def run_album_job(token: str, chat_id: int, title: str, prompts: list[str]) -> N
         current["process"] = None
         if current["cancel"]:
             send(token, chat_id, "已取消專輯製作。")
+            return
+        if code == 75:
+            owner = busy_owner(log_path)
+            send(token, chat_id,
+                 f"GPU 正被使用中（{owner}）。若是電腦上的 AI Music Maker 常駐了模型，"
+                 "請關閉 App 釋放模型後再試。")
             return
         meta_path = out_dir / "album.json"
         if code != 0 or not meta_path.is_file():

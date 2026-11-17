@@ -24,6 +24,8 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
+from gpu_lock import GpuBusy, acquire
+
 APP_DIR = Path(__file__).resolve().parent
 BASE_DIR = APP_DIR.parent                      # ...\AI_Music
 WORKSPACE = BASE_DIR.parent                    # ...\AIMUSIC
@@ -68,6 +70,15 @@ def _stdio() -> None:
 
 def _emit(tag: str, message: str) -> None:
     print(f"[{tag}] {message}", flush=True)
+
+
+def acquire_gpu(source: str, wait_seconds: float):
+    try:
+        return acquire(source, wait_seconds)
+    except GpuBusy as exc:
+        _emit("busy", str(exc))
+        _emit("error", "GPU 使用中")
+        return None
 
 
 def bootstrap() -> None:
@@ -421,7 +432,10 @@ def release_models(dit, llm) -> None:
         pass
 
 
-def run_oneshot(cfg: dict) -> int:
+def run_oneshot(cfg: dict, gpu_wait: float = 0.0) -> int:
+    lock = acquire_gpu("oneshot", gpu_wait)
+    if lock is None:
+        return 75
     dit = llm = None
     try:
         dit, llm = load_handlers(cfg["offload_mode"])
@@ -429,9 +443,13 @@ def run_oneshot(cfg: dict) -> int:
         return code
     finally:
         release_models(dit, llm)
+        lock.release()
 
 
-def run_daemon(offload_mode: str = "auto") -> int:
+def run_daemon(offload_mode: str = "auto", gpu_wait: float = 0.0) -> int:
+    lock = acquire_gpu("daemon", gpu_wait)
+    if lock is None:
+        return 75
     dit = llm = None
     try:
         dit, llm = load_handlers(offload_mode)
@@ -461,9 +479,10 @@ def run_daemon(offload_mode: str = "auto") -> int:
         return 1
     finally:
         release_models(dit, llm)
+        lock.release()
 
 
-def run_album(album_path: Path) -> int:
+def run_album(album_path: Path, gpu_wait: float = 0.0) -> int:
     data = json.loads(album_path.read_text(encoding="utf-8-sig"))
     shared = data.get("shared") or {}
     tracks = data.get("tracks") or []
@@ -472,37 +491,69 @@ def run_album(album_path: Path) -> int:
         return 1
     out_dir = Path(data.get("output_dir") or DEFAULT_OUT)
     out_dir.mkdir(parents=True, exist_ok=True)
-    dit = llm = None
+    album_json = out_dir / "album.json"
     files = []
-    try:
-        dit, llm = load_handlers(str(shared.get("offload_mode") or "auto"))
-        for index, track in enumerate(tracks, 1):
+    invalid = []
+    valid = []
+
+    for index, track in enumerate(tracks, 1):
+        title = str(track.get("title") or ("Track " + str(index)))
+        try:
             merged = dict(shared)
-            merged.update({k: v for k, v in track.items() if k != "title"})
+            merged.update({k: v for k, v in track.items()
+                           if k not in ("title", "prompt")})
             if track.get("prompt"):
                 merged["caption"] = str(track["prompt"])
             cfg = normalize_config(merged)
             cfg["output_dir"] = str(out_dir)
-            title = str(track.get("title") or ("Track " + str(index)))
-            safe = re.sub(r"[^\w\-\u4e00-\u9fff]+", "_", title).strip("_") or ("track" + str(index))
+            safe = re.sub(r"[^\w\-\u4e00-\u9fff]+", "_", title).strip("_") or \
+                ("track" + str(index))
             cfg["filename_prefix"] = f"{index:02d}_{safe}"
-            _emit("album", f"{index}/{len(tracks)} {title}")
-            code, produced = run_job(dit, llm, cfg)
-            if code != 0 or produced is None:
-                _emit("album", f"track {index} failed with code {code}")
-                continue
-            files.append({"index": index, "title": title,
-                          "file": str(produced), "prompt": cfg["caption"]})
+            valid.append((index, title, cfg))
+        except Exception as exc:
+            message = f"{type(exc).__name__}: {exc}"
+            _emit("error", f"album track {index} invalid: {message}")
+            invalid.append({"index": index, "title": title, "error": message})
+
+    def write_meta() -> None:
         meta = {"album_title": data.get("album_title", ""),
                 "artist": data.get("artist", ""),
                 "created": datetime.now().isoformat(timespec="seconds"),
-                "tracks": files}
-        (out_dir / "album.json").write_text(
-            json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
-        _emit("albumdone", str(out_dir / "album.json"))
-        return 0 if len(files) == len(tracks) else 1
+                "tracks": files,
+                "invalid": invalid}
+        album_json.write_text(json.dumps(meta, ensure_ascii=False, indent=2),
+                              encoding="utf-8")
+
+    if not valid:
+        write_meta()
+        _emit("albumdone", str(album_json))
+        return 1
+
+    lock = acquire_gpu("album", gpu_wait)
+    if lock is None:
+        return 75
+    dit = llm = None
+    try:
+        dit, llm = load_handlers(str(shared.get("offload_mode") or "auto"))
+        for index, title, cfg in valid:
+            _emit("album", f"{index}/{len(tracks)} {title}")
+            try:
+                code, produced = run_job(dit, llm, cfg)
+                if code != 0 or produced is None:
+                    raise RuntimeError(f"generate failed with code {code}")
+                files.append({"index": index, "title": title,
+                              "file": str(produced), "prompt": cfg["caption"]})
+            except Exception as exc:
+                message = f"{type(exc).__name__}: {exc}"
+                _emit("error", f"album track {index} failed: {message}")
+                invalid.append({"index": index, "title": title, "error": message})
     finally:
-        release_models(dit, llm)
+        write_meta()
+        _emit("albumdone", str(album_json))
+        if dit is not None or llm is not None:
+            release_models(dit, llm)
+        lock.release()
+    return 0 if len(files) == len(tracks) else 1
 
 
 def main() -> int:
@@ -514,6 +565,8 @@ def main() -> int:
     parser.add_argument("--limits", action="store_true", help="print gpu_config limits and exit")
     parser.add_argument("--album", type=Path, help="generate a multi-track album from JSON")
     parser.add_argument("--offload-mode", choices=("auto", "save_vram"), default="auto", help="daemon model offload policy")
+    parser.add_argument("--gpu-wait", type=float, default=0.0,
+                        help="seconds to wait for the GPU lock")
     args = parser.parse_args()
 
     if args.preflight:
@@ -525,7 +578,12 @@ def main() -> int:
         return 0
     if args.album:
         bootstrap()
-        return run_album(args.album)
+        try:
+            return run_album(args.album, args.gpu_wait)
+        except Exception as exc:  # noqa: BLE001
+            _emit("error", f"{type(exc).__name__}: {exc}")
+            traceback.print_exc()
+            return 1
     if not args.daemon and not args.config:
         parser.print_help()
         return 2
@@ -533,7 +591,7 @@ def main() -> int:
     _emit("info", f"workspace: {WORKSPACE}")
     bootstrap()
     if args.daemon:
-        return run_daemon(args.offload_mode)
+        return run_daemon(args.offload_mode, args.gpu_wait)
 
     try:
         cfg = load_config(args.config)
@@ -542,7 +600,7 @@ def main() -> int:
                                      "seed", "thinking", "output_dir", "audio_format",
                                      "lm_negative_prompt", "fade_in_duration", "fade_out_duration",
                                      "shift", "mp3_bitrate", "mp3_sample_rate")}, ensure_ascii=False))
-        return run_oneshot(cfg)
+        return run_oneshot(cfg, args.gpu_wait)
     except Exception as exc:  # noqa: BLE001
         _emit("error", f"{type(exc).__name__}: {exc}")
         traceback.print_exc()
