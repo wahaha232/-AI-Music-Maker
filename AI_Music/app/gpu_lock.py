@@ -9,8 +9,19 @@ from datetime import datetime
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-LOCK_FILE = BASE_DIR / ".gpu.lock"
-OWNER_FILE = BASE_DIR / ".gpu.owner.json"
+
+
+def _lock_dir() -> Path:
+    override = os.environ.get("AIMUSIC_GPU_LOCK_DIR")
+    return Path(override) if override else BASE_DIR
+
+
+def _lock_file() -> Path:
+    return _lock_dir() / ".gpu.lock"
+
+
+def _owner_file() -> Path:
+    return _lock_dir() / ".gpu.owner.json"
 
 
 class GpuBusy(Exception):
@@ -36,7 +47,7 @@ def _process_alive(pid: int) -> bool:
 
 def owner_info() -> str:
     try:
-        data = json.loads(OWNER_FILE.read_text(encoding="utf-8"))
+        data = json.loads(_owner_file().read_text(encoding="utf-8"))
         pid = int(data.get("pid", 0))
         source = str(data.get("source", "unknown"))
         started = str(data.get("started", ""))
@@ -78,9 +89,9 @@ class GpuLock:
         except Exception:
             pass
         try:
-            data = json.loads(OWNER_FILE.read_text(encoding="utf-8"))
+            data = json.loads(_owner_file().read_text(encoding="utf-8"))
             if int(data.get("pid", -1)) == os.getpid():
-                OWNER_FILE.unlink()
+                _owner_file().unlink()
         except Exception:
             pass
 
@@ -90,8 +101,10 @@ def acquire(source: str, wait_seconds: float = 0.0) -> GpuLock:
     flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_BINARY", 0)
     while True:
         fd = None
+        lock_file = _lock_file()
         try:
-            fd = os.open(str(LOCK_FILE), flags, 0o666)
+            lock_file.parent.mkdir(parents=True, exist_ok=True)
+            fd = os.open(str(lock_file), flags, 0o666)
             if os.fstat(fd).st_size == 0:
                 os.write(fd, b"0")
             os.lseek(fd, 0, os.SEEK_SET)
@@ -102,7 +115,7 @@ def acquire(source: str, wait_seconds: float = 0.0) -> GpuLock:
                 import fcntl
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             lock = GpuLock(fd, source)
-            OWNER_FILE.write_text(json.dumps({
+            _owner_file().write_text(json.dumps({
                 "pid": os.getpid(),
                 "source": source,
                 "started": datetime.now().isoformat(timespec="seconds"),

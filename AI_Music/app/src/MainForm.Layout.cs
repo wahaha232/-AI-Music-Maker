@@ -551,10 +551,12 @@ namespace AIMusicGenerator
 
             UiBuild.AddSection(grid, "節奏與長度", false);
             UiBuild.AddWide(grid, "BPM", UiBuild.Row(UiBuild.Stepper(numBpm, S(120)), chkAutoBpm));
-            UiBuild.AddWide(grid, "時長", UiBuild.Row(
-                UiBuild.Stepper(numHours, S(64)), UiBuild.Unit("時"),
-                UiBuild.Stepper(numMinutes, S(64)), UiBuild.Unit("分"),
-                UiBuild.Stepper(numSeconds, S(64)), UiBuild.Unit("秒")));
+            // 時／分／秒 needs the full card width: caption on its own line, fields below.
+            UiBuild.AddFull(grid, UiBuild.Caption("時長"), new RowStyle(SizeType.AutoSize));
+            UiBuild.AddFull(grid, UiBuild.Row(
+                UiBuild.Stepper(numHours, S(80)), UiBuild.Unit("時"),
+                UiBuild.Stepper(numMinutes, S(84)), UiBuild.Unit("分"),
+                UiBuild.Stepper(numSeconds, S(84)), UiBuild.Unit("秒")), new RowStyle(SizeType.AutoSize));
             UiBuild.AddSection(grid, "取樣", true);
             UiBuild.AddPair(grid, "步數", UiBuild.Stepper(numSteps, 0), "Guidance", UiBuild.Stepper(numGuidance, 0));
             InputHost seedHost = UiBuild.Host(txtSeed, UiBuild.TextPadding(txtSeed));

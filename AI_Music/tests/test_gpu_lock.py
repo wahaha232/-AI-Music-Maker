@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import os
+import shutil
 import subprocess
 import sys
 import tempfile
-import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -15,8 +16,24 @@ sys.path.insert(0, str(APP))
 import generate_backend as backend  # noqa: E402
 from gpu_lock import GpuBusy, acquire  # noqa: E402
 
+backend._stdio()
+
 
 class GpuLockTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.lock_dir = tempfile.mkdtemp(prefix="aimusic_gpu_lock_")
+        cls.previous = os.environ.get("AIMUSIC_GPU_LOCK_DIR")
+        os.environ["AIMUSIC_GPU_LOCK_DIR"] = cls.lock_dir
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls.previous is None:
+            os.environ.pop("AIMUSIC_GPU_LOCK_DIR", None)
+        else:
+            os.environ["AIMUSIC_GPU_LOCK_DIR"] = cls.previous
+        shutil.rmtree(cls.lock_dir, ignore_errors=True)
+
     def _hold_lock(self):
         script = (
             "import sys,time;"
@@ -33,6 +50,7 @@ class GpuLockTests(unittest.TestCase):
             text=True,
             encoding="utf-8",
             errors="replace",
+            env=os.environ.copy(),
         )
         line = process.stdout.readline().strip()
         if line != "locked":

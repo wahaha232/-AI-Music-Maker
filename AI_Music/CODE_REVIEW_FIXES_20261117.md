@@ -98,3 +98,44 @@ Commit：`f8cbcf0`
 - App daemon 生成完成後仍常駐並持有 GPU 鎖，遠端 `/gen` 會一直被視為忙碌；
   沒有「卸載模型」按鈕，唯一釋放方式是關閉 App。
 - P1-1 協作式取消、P1-5 日誌效能、P1-8 SD 啟動鎖、P1-9 小問題與 P2 重構仍未處理。
+
+### 範圍外變更（補記）
+
+1. 時長新增「秒」欄位，最短可設 10 秒（原本最短 1 分鐘）；`SetDurationFromSeconds` 不再進位到整分鐘，舊設定檔的 90 秒現在顯示為 1 分 30 秒。
+2. 專輯完成後，每首都會加入自動轉影片佇列（`QueueAutoVideo`）。
+
+## 第 3 批（2026-11-17）
+
+分支：`fix/review-batch3`
+Commit：提交後填入
+
+| 項目 | 修改檔案 | 狀態 | 驗證證據 |
+|---|---|---|---|
+| N3 時長欄位截斷 | `MainForm.Layout.cs` | 通過 | `build.ps1` 通過；截圖 `shots_batch3\dark_150.png`、`shots_batch3\dark_100_max.png` 可見 0 時 8 分 0 秒 |
+| N4 補記第 2 批 | `CODE_REVIEW_FIXES_20261117.md` | 通過 | 僅新增「範圍外變更（補記）」兩點 |
+| N6 測試專用 GPU 鎖 | `gpu_lock.py`、`test_gpu_lock.py` | 通過 | 13 tests OK；正式 `.gpu.lock`／`.gpu.owner.json` 前後 SHA256 與時間戳不變；另持正式鎖執行 unittest 仍 OK |
+| N7 測試中文輸出 | `test_backend.py`、`test_gpu_lock.py` | 通過 | PowerShell 輸出 `[error] GPU 使用中` 正常，13 tests OK |
+
+### N3 做法
+
+- 時長列改為標題獨立一行，欄位另起一列：`S(80)`／`S(84)`／`S(84)`。
+- 150% 截圖：`G:\AIMUSIC\AI_Music\shots_batch3\dark_150.png`。
+- 100% + `AIMUSIC_SHOT_SIZE=max` 截圖：`G:\AIMUSIC\AI_Music\shots_batch3\dark_100_max.png`。
+
+### N6 做法
+
+- `gpu_lock.py` 改為執行時讀取 `AIMUSIC_GPU_LOCK_DIR`；未設定才使用 `AI_Music`。
+- 測試 `setUpClass` 建立暫存鎖目錄，子程序以 `env=os.environ.copy()` 繼承。
+- 正式鎖狀態檢查：`.gpu.lock`、`.gpu.owner.json` 測試前後 SHA256、大小、mtime 完全相同。
+- 實測正式鎖被持有時，unittest 仍 13 tests OK。
+
+### N7 做法
+
+- `test_backend.py`、`test_gpu_lock.py` 在 import `generate_backend` 後呼叫 `backend._stdio()`。
+- 驗證輸出：`[error] GPU 使用中` 中文正常顯示。
+
+### 範圍外發現（只記錄，未修）
+
+- N5 App 閒置自動卸載模型未實作（本批明令不做）。
+- SD WebUI 仍未取得 `gpu_lock`；目前只在啟動 SD／Telegram 前釋放 ACE-Step daemon。
+- 批次 SD 封面與 Telegram 切換釋放模型已在前一個 commit `1335653` 完成，不属于本批。
