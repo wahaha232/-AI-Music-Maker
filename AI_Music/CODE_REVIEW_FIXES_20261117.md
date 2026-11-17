@@ -39,8 +39,8 @@
 
 ## 第 2 批（2026-11-17）
 
-分支：`fix/review-batch2`  
-Commit：提交後填入
+分支：`fix/review-batch2`
+Commit：`f8cbcf0`
 
 | 項目 | 修改檔案 | 狀態 | 驗證證據 |
 |---|---|---|---|
