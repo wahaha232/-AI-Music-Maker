@@ -244,6 +244,19 @@ namespace AIMusicGenerator
                 Environment.Exit(0);
                 return;
             }
+            if (args.Length >= 2 && args[0] == "--ui-screenshot")
+            {
+                // --ui-screenshot <out.png> [dark|light] [demoOutputDir] [dialog]
+                Application.EnableVisualStyles();
+                Application.SetCompatibleTextRenderingDefault(false);
+                string target = args[1];
+                bool dark = args.Length < 3 || !args[2].Equals("light", StringComparison.OrdinalIgnoreCase);
+                string demo = args.Length >= 4 ? args[3] : "";
+                string dialog = args.Length >= 5 ? args[4] : "";
+                int code = UiScreenshot.Run(target, dark, demo, dialog);
+                Environment.Exit(code);
+                return;
+            }
             if (args.Length >= 1 && args[0] == "--ui-test-batch")
             {
                 Application.EnableVisualStyles();

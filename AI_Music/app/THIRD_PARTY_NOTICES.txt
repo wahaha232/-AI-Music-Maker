@@ -1,13 +1,30 @@
 AI Music Maker - third-party notices
 
-Catppuccin (Latte / Mocha palettes)
+Catppuccin (Mocha = dark theme, Latte = light theme colour palettes)
   License: MIT
   https://github.com/catppuccin/catppuccin
+  Used: official palette hex values in src/ThemeManager.cs
 
-Lucide icons (audio-lines, play, pause, square, folder-open, sparkles, x)
+Lucide icons (lucide-static 1.74.0)
   License: ISC
-  https://github.com/lucide-icons/lucide
-  Copyright (c) 2022 Lucide Contributors
+  https://lucide.dev  /  https://github.com/lucide-icons/lucide
+  Copyright (c) 2026 Lucide Icons and Contributors
+  Used: 44 icons converted to SVG path data in src/LucideIcons.cs and drawn as vectors by
+  src/IconRenderer.cs: activity, audio-lines, audio-waveform, brain, check, clock, cpu, dices,
+  disc-3, folder, folder-open, git-merge, hash, image, info, key-round, languages, layers, link,
+  list-music, maximize-2, minus, moon, music, pause, piano, play, plus, refresh-cw, scissors,
+  scroll-text, send, settings-2, sliders-horizontal, sparkles, square, sun, timer,
+  triangle-alert, video, volume-2, wand-sparkles, wrench, x
+  ISC License text:
+    Permission to use, copy, modify, and/or distribute this software for any purpose with or
+    without fee is hereby granted, provided that the above copyright notice and this
+    permission notice appear in all copies.
+    THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO
+    THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT
+    SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR
+    ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF
+    CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE
+    OR PERFORMANCE OF THIS SOFTWARE.
 
 NAudio (audio playback / decoding)
   License: MIT
@@ -27,6 +44,9 @@ imageio-ffmpeg (source of the bundled FFmpeg binary)
   License: BSD-2-Clause (package)
   https://github.com/imageio/imageio-ffmpeg
 
-App icon and default cover rendered from the Lucide 'audio-lines' SVG.
-Waveform drawing is original code (System.Drawing).
-Rounded WinForms buttons and the ThemeManager are original code.
+app.ico and the default cover.png are rendered by the app itself (UiScreenshot.cs ->
+ArtGenerator, "--ui-screenshot <folder> dark \"\" art") from the Lucide 'audio-lines' glyph
+and the Catppuccin Mocha colours; no third-party bitmap is included.
+Fonts: the system font Microsoft JhengHei UI (and Cascadia Mono / Consolas for logs) is used;
+no font file is bundled.
+All controls (cards, buttons, toggles, sliders, waveform, combo boxes) are original code.

@@ -15,51 +15,27 @@ namespace AIMusicGenerator
 
         public PromptEditorDialog(string text)
         {
-            Text = "編輯提示詞";
-            StartPosition = FormStartPosition.CenterParent;
-            ClientSize = new Size(1000, 760);
-            MinimumSize = new Size(640, 480);
-            Font = new Font("Microsoft JhengHei UI", 11F);
-            BackColor = Color.FromArgb(18, 19, 24);
-            ForeColor = Color.White;
+            UiBuild.DialogParts parts = UiBuild.Dialog(this, "編輯提示詞",
+                "大型編輯視窗；套用後會取代主畫面的提示詞", "maximize-2", 1000, 720, true);
+            MinimumSize = Dpi.S(640, 480);
 
-            Panel bottom = new Panel();
-            bottom.Dock = DockStyle.Bottom;
-            bottom.Height = 56;
-            bottom.BackColor = Color.FromArgb(18, 19, 24);
-
-            Button ok = new Button();
-            ok.Text = "套用";
-            ok.DialogResult = DialogResult.OK;
-            ok.SetBounds(764, 8, 110, 40);
-            ok.FlatStyle = FlatStyle.Flat;
-            ok.BackColor = Color.FromArgb(67, 56, 202);
-            ok.ForeColor = Color.White;
-            bottom.Controls.Add(ok);
-
-            Button cancel = new Button();
-            cancel.Text = "取消";
-            cancel.DialogResult = DialogResult.Cancel;
-            cancel.SetBounds(880, 8, 110, 40);
-            cancel.FlatStyle = FlatStyle.Flat;
-            cancel.BackColor = Color.FromArgb(55, 58, 70);
-            cancel.ForeColor = Color.White;
-            bottom.Controls.Add(cancel);
-
-            editor.Dock = DockStyle.Fill;
-            editor.BorderStyle = BorderStyle.None;
-            editor.BackColor = Color.FromArgb(26, 27, 35);
-            editor.ForeColor = Color.FromArgb(230, 233, 240);
-            editor.Font = new Font("Microsoft JhengHei UI", 12F);
             editor.WordWrap = true;
             editor.ScrollBars = RichTextBoxScrollBars.Vertical;
             editor.AcceptsTab = true;
+            editor.DetectUrls = false;
             editor.Text = text ?? "";
+            UiBuild.AddFull(parts.Body, UiBuild.TextArea(editor, Dpi.Font(12F, FontStyle.Regular)),
+                new RowStyle(SizeType.Percent, 100F));
 
-            Controls.Add(editor);
-            Controls.Add(bottom);
-            AcceptButton = ok;
+            ModernButton ok = UiBuild.Button(new ModernButton(), "套用", "check", ButtonKind.Primary);
+            ok.DialogResult = DialogResult.OK;
+            ModernButton cancel = UiBuild.Button(new ModernButton(), "取消", "", ButtonKind.Secondary);
+            cancel.DialogResult = DialogResult.Cancel;
+            UiBuild.AddFooterButton(parts.Footer, ok);
+            UiBuild.AddFooterButton(parts.Footer, cancel);
             CancelButton = cancel;
+
+            ThemeManager.ApplyDialog(this);
         }
     }
 }

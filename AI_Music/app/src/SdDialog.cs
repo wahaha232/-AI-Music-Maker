@@ -8,13 +8,13 @@ namespace AIMusicGenerator
 {
     internal sealed class SdDialog : Form
     {
-        private readonly CheckBox chkEnable = new CheckBox();
+        private readonly CheckBox chkEnable = new ToggleSwitch();
         private readonly TextBox txtUrl = new TextBox();
         private readonly TextBox txtPath = new TextBox();
-        private readonly ComboBox comboModel = new ComboBox();
-        private readonly Button btnRefresh = new Button();
+        private readonly ComboBox comboModel = new ThemedComboBox();
+        private readonly ModernButton btnRefresh = new ModernButton();
         private readonly NumericUpDown numSteps = new NumericUpDown();
-        private readonly ComboBox comboSize = new ComboBox();
+        private readonly ComboBox comboSize = new ThemedComboBox();
         private readonly Label lblStatus = new Label();
 
         public bool EnabledForCover { get; private set; }
@@ -26,35 +26,27 @@ namespace AIMusicGenerator
 
         public SdDialog(bool enabled, string url, string path, string model, int steps, int size)
         {
-            Text = "Stable Diffusion 封面";
-            Font = new Font("Microsoft JhengHei UI", 11F);
-            ClientSize = new Size(620, 430);
-            StartPosition = FormStartPosition.CenterParent;
-            FormBorderStyle = FormBorderStyle.FixedDialog;
-            MaximizeBox = false;
-            MinimizeBox = false;
-            BackColor = Color.FromArgb(24, 25, 31);
-            ForeColor = Color.FromArgb(232, 234, 241);
+            UiBuild.DialogParts parts = UiBuild.Dialog(this, "Stable Diffusion 封面",
+                "音樂完成後呼叫本機 WebUI API 產生專輯封面", "image", 640, 520, false);
+            TableLayoutPanel body = parts.Body;
+            body.ColumnCount = 4;
+            body.ColumnStyles.Clear();
+            body.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+            body.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
 
-            chkEnable.SetBounds(12, 12, 580, 28);
             chkEnable.Text = "音樂生成後，自動用 Stable Diffusion 產生封面";
             chkEnable.Checked = enabled;
+            chkEnable.Margin = new Padding(0, Dpi.S(2), 0, Dpi.S(6));
+            UiBuild.AddFull(body, chkEnable, new RowStyle(SizeType.AutoSize));
 
-            Label l1 = MakeLabel("WebUI URL", 12, 52);
-            txtUrl.SetBounds(12, 78, 580, 28);
-            txtUrl.BackColor = Color.FromArgb(34, 36, 44);
-            txtUrl.ForeColor = Color.White;
             txtUrl.Text = url;
-
-            Label l2 = MakeLabel("WebUI 安裝路徑", 12, 116);
-            txtPath.SetBounds(12, 142, 580, 28);
-            txtPath.BackColor = Color.FromArgb(34, 36, 44);
-            txtPath.ForeColor = Color.White;
             txtPath.Text = path;
+            UiBuild.AddSection(body, "WebUI", true);
+            UiBuild.AddWide(body, "API 網址", UiBuild.TextField(txtUrl));
+            UiBuild.AddWide(body, "安裝路徑", UiBuild.TextField(txtPath));
 
-            Label l3 = MakeLabel("Model", 12, 180);
-            comboModel.SetBounds(12, 206, 470, 28);
-            comboModel.DropDownStyle = ComboBoxStyle.DropDownList;
             comboModel.Items.Add("(尚未取得模型清單)");
             comboModel.SelectedIndex = 0;
             if (!string.IsNullOrEmpty(model))
@@ -62,37 +54,30 @@ namespace AIMusicGenerator
                 comboModel.Items.Add(model);
                 comboModel.SelectedItem = model;
             }
-
-            btnRefresh.SetBounds(492, 205, 100, 30);
-            btnRefresh.Text = "重新整理";
-            btnRefresh.FlatStyle = FlatStyle.Flat;
-            btnRefresh.BackColor = Color.FromArgb(48, 50, 60);
-            btnRefresh.ForeColor = Color.White;
+            UiBuild.Button(btnRefresh, "重新整理", "refresh-cw", ButtonKind.Secondary);
             btnRefresh.Click += OnRefresh;
+            Control modelCombo = UiBuild.Combo(comboModel);
+            UiBuild.AddSection(body, "模型與品質", true);
+            UiBuild.AddWide(body, "模型", UiBuild.Fill(modelCombo, btnRefresh));
 
-            Label l4 = MakeLabel("Steps", 12, 246);
-            numSteps.SetBounds(12, 272, 80, 28);
             numSteps.Minimum = 8;
             numSteps.Maximum = 40;
             numSteps.Value = Math.Max(8, Math.Min(40, steps));
-
-            Label l5 = MakeLabel("尺寸", 112, 246);
-            comboSize.SetBounds(112, 272, 100, 28);
-            comboSize.DropDownStyle = ComboBoxStyle.DropDownList;
             comboSize.Items.AddRange(new object[] { "512", "640", "768" });
             comboSize.SelectedItem = size.ToString();
             if (comboSize.SelectedIndex < 0) comboSize.SelectedIndex = 0;
+            UiBuild.AddPair(body, "Steps", UiBuild.Stepper(numSteps, 0), "尺寸", UiBuild.Combo(comboSize));
 
-            lblStatus.SetBounds(12, 312, 580, 40);
-            lblStatus.ForeColor = Color.FromArgb(160, 200, 235);
             lblStatus.Text = "提示：第一次啟動 WebUI 約需 1–3 分鐘。";
+            lblStatus.Tag = "accent";
+            lblStatus.AutoSize = true;
+            lblStatus.MaximumSize = new Size(Dpi.S(580), 0);
+            lblStatus.Margin = new Padding(0, Dpi.S(12), 0, 0);
+            UiBuild.AddFull(body, lblStatus, new RowStyle(SizeType.AutoSize));
+            body.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            body.RowCount++;
 
-            Button ok = new Button();
-            ok.SetBounds(360, 370, 110, 38);
-            ok.Text = "套用";
-            ok.FlatStyle = FlatStyle.Flat;
-            ok.BackColor = Color.FromArgb(108, 92, 231);
-            ok.ForeColor = Color.White;
+            ModernButton ok = UiBuild.Button(new ModernButton(), "套用", "check", ButtonKind.Primary);
             ok.Click += delegate
             {
                 EnabledForCover = chkEnable.Checked;
@@ -105,32 +90,13 @@ namespace AIMusicGenerator
                 DialogResult = DialogResult.OK;
                 Close();
             };
-
-            Button cancel = new Button();
-            cancel.SetBounds(480, 370, 110, 38);
-            cancel.Text = "取消";
-            cancel.FlatStyle = FlatStyle.Flat;
-            cancel.BackColor = Color.FromArgb(48, 50, 60);
-            cancel.ForeColor = Color.White;
+            ModernButton cancel = UiBuild.Button(new ModernButton(), "取消", "", ButtonKind.Secondary);
             cancel.Click += delegate { DialogResult = DialogResult.Cancel; Close(); };
+            UiBuild.AddFooterButton(parts.Footer, ok);
+            UiBuild.AddFooterButton(parts.Footer, cancel);
+            CancelButton = cancel;
 
-            Controls.AddRange(new Control[]
-            {
-                chkEnable, l1, txtUrl, l2, txtPath, l3, comboModel, btnRefresh,
-                l4, numSteps, l5, comboSize, lblStatus, ok, cancel
-            });
             ThemeManager.ApplyDialog(this);
-            ThemeManager.StylePrimary(ok);
-        }
-
-        private static Label MakeLabel(string text, int x, int y)
-        {
-            Label label = new Label();
-            label.Text = text;
-            label.AutoSize = true;
-            label.Location = new Point(x, y);
-            label.ForeColor = Color.FromArgb(200, 205, 218);
-            return label;
         }
 
         private void OnRefresh(object sender, EventArgs e)

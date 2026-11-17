@@ -18,49 +18,36 @@ namespace AIMusicGenerator
 
         public AlbumDialog(string defaultPrompt, int duration)
         {
-            Text = "製作整張專輯";
-            Font = new Font("Microsoft JhengHei UI", 11F);
-            ClientSize = new Size(760, 560);
-            StartPosition = FormStartPosition.CenterParent;
-            FormBorderStyle = FormBorderStyle.FixedDialog;
-            MaximizeBox = false;
-            MinimizeBox = false;
-            BackColor = Color.FromArgb(24, 25, 31);
-            ForeColor = Color.FromArgb(232, 234, 241);
+            UiBuild.DialogParts parts = UiBuild.Dialog(this, "製作整張專輯",
+                "每行一首：歌名 | 提示詞 | 秒數（後兩者可省略，省略時沿用預設）", "disc-3", 780, 600, true);
+            TableLayoutPanel body = parts.Body;
+            body.ColumnCount = 4;
+            body.ColumnStyles.Clear();
+            body.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 60F));
+            body.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40F));
 
-            Label l0 = MakeLabel("專輯名稱", 12, 12);
-            txtTitle.SetBounds(12, 38, 720, 28);
-            txtTitle.BackColor = Color.FromArgb(34, 36, 44);
-            txtTitle.ForeColor = Color.White;
             txtTitle.Text = "My Album";
-
-            Label l1 = MakeLabel("藝人名稱", 12, 76);
-            txtArtist.SetBounds(12, 102, 350, 28);
-            txtArtist.BackColor = Color.FromArgb(34, 36, 44);
-            txtArtist.ForeColor = Color.White;
             txtArtist.Text = "AI Music Maker";
-
-            Label l2 = MakeLabel("每首長度（秒）", 380, 76);
-            numDuration.SetBounds(380, 102, 100, 28);
             numDuration.Minimum = 10;
             numDuration.Maximum = 7200;
             numDuration.Value = Math.Max(10, Math.Min(7200, duration));
 
-            Label l3 = MakeLabel("曲目（每行一首；格式：歌名 | 提示詞 | 秒數，後兩者可省略）", 12, 144);
-            txtTracks.SetBounds(12, 172, 720, 300);
-            txtTracks.Multiline = true;
-            txtTracks.ScrollBars = ScrollBars.Vertical;
-            txtTracks.BackColor = Color.FromArgb(16, 17, 22);
-            txtTracks.ForeColor = Color.FromArgb(230, 233, 240);
-            txtTracks.Font = new Font("Consolas", 10F);
-            txtTracks.Text = "Track 01 | " + (defaultPrompt ?? "") + " | 180";
+            UiBuild.AddSection(body, "專輯資訊", false);
+            UiBuild.AddWide(body, "專輯名稱", UiBuild.TextField(txtTitle));
+            UiBuild.AddPair(body, "藝人", UiBuild.TextField(txtArtist), "每首秒數", UiBuild.Stepper(numDuration, 0));
 
-            Button ok = new Button();
-            ok.SetBounds(490, 492, 110, 40);
-            ok.Text = "開始製作";
-            ok.FlatStyle = FlatStyle.Flat;
-            ok.BackColor = Color.FromArgb(108, 92, 231);
-            ok.ForeColor = Color.White;
+            UiBuild.AddSection(body, "曲目", true);
+            txtTracks.ScrollBars = ScrollBars.Vertical;
+            txtTracks.WordWrap = false;
+            txtTracks.AcceptsReturn = true;
+            txtTracks.Text = "Track 01 | " + (defaultPrompt ?? "").Replace("\r", " ").Replace("\n", " ") + " | 180";
+            UiBuild.AddFull(body, UiBuild.TextArea(txtTracks, ThemeManager.MonoFont), new RowStyle(SizeType.Percent, 100F));
+            UiBuild.AddFull(body, UiBuild.Note("範例：Midnight Rain | warm lo-fi piano, soft rain ambience | 180"),
+                new RowStyle(SizeType.AutoSize));
+
+            ModernButton ok = UiBuild.Button(new ModernButton(), "開始製作", "disc-3", ButtonKind.Primary);
             ok.Click += delegate
             {
                 AlbumTitle = txtTitle.Text.Trim();
@@ -75,31 +62,13 @@ namespace AIMusicGenerator
                 DialogResult = DialogResult.OK;
                 Close();
             };
-
-            Button cancel = new Button();
-            cancel.SetBounds(610, 492, 110, 40);
-            cancel.Text = "取消";
-            cancel.FlatStyle = FlatStyle.Flat;
-            cancel.BackColor = Color.FromArgb(48, 50, 60);
-            cancel.ForeColor = Color.White;
+            ModernButton cancel = UiBuild.Button(new ModernButton(), "取消", "", ButtonKind.Secondary);
             cancel.Click += delegate { DialogResult = DialogResult.Cancel; Close(); };
+            UiBuild.AddFooterButton(parts.Footer, ok);
+            UiBuild.AddFooterButton(parts.Footer, cancel);
+            CancelButton = cancel;
 
-            Controls.AddRange(new Control[]
-            {
-                l0, txtTitle, l1, txtArtist, l2, numDuration, l3, txtTracks, ok, cancel
-            });
             ThemeManager.ApplyDialog(this);
-            ThemeManager.StylePrimary(ok);
-        }
-
-        private static Label MakeLabel(string text, int x, int y)
-        {
-            Label label = new Label();
-            label.Text = text;
-            label.AutoSize = true;
-            label.Location = new Point(x, y);
-            label.ForeColor = Color.FromArgb(200, 205, 218);
-            return label;
         }
     }
 }

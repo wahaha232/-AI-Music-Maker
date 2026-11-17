@@ -10,8 +10,8 @@ namespace AIMusicGenerator
         private readonly NumericUpDown numFadeIn = new NumericUpDown();
         private readonly NumericUpDown numFadeOut = new NumericUpDown();
         private readonly NumericUpDown numShift = new NumericUpDown();
-        private readonly ComboBox comboBitrate = new ComboBox();
-        private readonly ComboBox comboRate = new ComboBox();
+        private readonly ComboBox comboBitrate = new ThemedComboBox();
+        private readonly ComboBox comboRate = new ThemedComboBox();
 
         public string NegativePrompt { get; private set; }
         public decimal FadeIn { get; private set; }
@@ -23,68 +23,55 @@ namespace AIMusicGenerator
         public AdvancedDialog(string negative, decimal fadeIn, decimal fadeOut,
             decimal shift, string bitrate, int sampleRate)
         {
-            Text = "進階音樂設定";
-            Font = new Font("Microsoft JhengHei UI", 11F);
-            ClientSize = new Size(560, 470);
-            StartPosition = FormStartPosition.CenterParent;
-            FormBorderStyle = FormBorderStyle.FixedDialog;
-            MaximizeBox = false;
-            MinimizeBox = false;
-            BackColor = Color.FromArgb(24, 25, 31);
-            ForeColor = Color.FromArgb(232, 234, 241);
+            UiBuild.DialogParts parts = UiBuild.Dialog(this, "進階音樂設定",
+                "負向提示、淡入淡出、Turbo Shift 與 MP3 輸出參數", "settings-2", 580, 560, false);
+            TableLayoutPanel body = parts.Body;
+            body.ColumnCount = 4;
+            body.ColumnStyles.Clear();
+            body.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+            body.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
 
-            Label l1 = MakeLabel("Negative prompt（避免事項）", 12, 12);
-            txtNegative.SetBounds(12, 40, 536, 150);
-            txtNegative.Multiline = true;
+            UiBuild.AddSection(body, "負向提示（避免事項）", false);
             txtNegative.ScrollBars = ScrollBars.Vertical;
-            txtNegative.BackColor = Color.FromArgb(34, 36, 44);
-            txtNegative.ForeColor = Color.White;
             txtNegative.Text = negative ?? "";
+            UiBuild.AddFull(body, UiBuild.TextArea(txtNegative, ThemeManager.UiFont), new RowStyle(SizeType.Percent, 100F));
+            UiBuild.AddFull(body, UiBuild.Note("例如：vocals, harsh noise, distorted guitar（給 LM 參考，不保證完全避免）"),
+                new RowStyle(SizeType.AutoSize));
 
-            Label l2 = MakeLabel("淡入（秒）", 12, 208);
-            numFadeIn.SetBounds(12, 234, 90, 28);
             numFadeIn.DecimalPlaces = 1;
-            numFadeIn.Increment = 1m;
+            numFadeIn.Increment = 0.5m;
             numFadeIn.Minimum = 0m;
             numFadeIn.Maximum = 30m;
             numFadeIn.Value = Math.Max(0m, Math.Min(30m, fadeIn));
-
-            Label l3 = MakeLabel("淡出（秒）", 124, 208);
-            numFadeOut.SetBounds(124, 234, 90, 28);
             numFadeOut.DecimalPlaces = 1;
-            numFadeOut.Increment = 1m;
+            numFadeOut.Increment = 0.5m;
             numFadeOut.Minimum = 0m;
             numFadeOut.Maximum = 30m;
             numFadeOut.Value = Math.Max(0m, Math.Min(30m, fadeOut));
-
-            Label l4 = MakeLabel("Shift（Turbo）", 236, 208);
-            numShift.SetBounds(236, 234, 90, 28);
             numShift.DecimalPlaces = 1;
             numShift.Increment = 0.5m;
             numShift.Minimum = 0.5m;
             numShift.Maximum = 10m;
             numShift.Value = Math.Max(0.5m, Math.Min(10m, shift));
 
-            Label l5 = MakeLabel("MP3 bitrate", 12, 282);
-            comboBitrate.SetBounds(12, 308, 150, 28);
-            comboBitrate.DropDownStyle = ComboBoxStyle.DropDownList;
+            UiBuild.AddSection(body, "淡入淡出與 Shift", true);
+            UiBuild.AddPair(body, "淡入（秒）", UiBuild.Stepper(numFadeIn, 0), "淡出（秒）", UiBuild.Stepper(numFadeOut, 0));
+            Label spacer = new Label();
+            spacer.AutoSize = true;
+            UiBuild.AddPair(body, "Shift", UiBuild.Stepper(numShift, 0), "", spacer);
+
             comboBitrate.Items.AddRange(new object[] { "128k", "192k", "256k", "320k" });
             comboBitrate.SelectedItem = bitrate;
             if (comboBitrate.SelectedIndex < 0) comboBitrate.SelectedIndex = 0;
-
-            Label l6 = MakeLabel("MP3 sample rate", 184, 282);
-            comboRate.SetBounds(184, 308, 150, 28);
-            comboRate.DropDownStyle = ComboBoxStyle.DropDownList;
             comboRate.Items.AddRange(new object[] { "44100", "48000" });
             comboRate.SelectedItem = sampleRate.ToString();
             if (comboRate.SelectedIndex < 0) comboRate.SelectedIndex = 1;
+            UiBuild.AddSection(body, "MP3 輸出", true);
+            UiBuild.AddPair(body, "位元率", UiBuild.Combo(comboBitrate), "取樣率", UiBuild.Combo(comboRate));
 
-            Button ok = new Button();
-            ok.SetBounds(300, 400, 110, 38);
-            ok.Text = "套用";
-            ok.FlatStyle = FlatStyle.Flat;
-            ok.BackColor = Color.FromArgb(108, 92, 231);
-            ok.ForeColor = Color.White;
+            ModernButton ok = UiBuild.Button(new ModernButton(), "套用", "check", ButtonKind.Primary);
             ok.Click += delegate
             {
                 NegativePrompt = txtNegative.Text.Trim();
@@ -96,32 +83,13 @@ namespace AIMusicGenerator
                 DialogResult = DialogResult.OK;
                 Close();
             };
-
-            Button cancel = new Button();
-            cancel.SetBounds(420, 400, 110, 38);
-            cancel.Text = "取消";
-            cancel.FlatStyle = FlatStyle.Flat;
-            cancel.BackColor = Color.FromArgb(48, 50, 60);
-            cancel.ForeColor = Color.White;
+            ModernButton cancel = UiBuild.Button(new ModernButton(), "取消", "", ButtonKind.Secondary);
             cancel.Click += delegate { DialogResult = DialogResult.Cancel; Close(); };
+            UiBuild.AddFooterButton(parts.Footer, ok);
+            UiBuild.AddFooterButton(parts.Footer, cancel);
+            CancelButton = cancel;
 
-            Controls.AddRange(new Control[]
-            {
-                l1, txtNegative, l2, numFadeIn, l3, numFadeOut, l4, numShift,
-                l5, comboBitrate, l6, comboRate, ok, cancel
-            });
             ThemeManager.ApplyDialog(this);
-            ThemeManager.StylePrimary(ok);
-        }
-
-        private static Label MakeLabel(string text, int x, int y)
-        {
-            Label label = new Label();
-            label.Text = text;
-            label.AutoSize = true;
-            label.Location = new Point(x, y);
-            label.ForeColor = Color.FromArgb(200, 205, 218);
-            return label;
         }
     }
 }

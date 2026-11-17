@@ -14,7 +14,7 @@ using WinTimer = System.Windows.Forms.Timer;
 
 namespace AIMusicGenerator
 {
-    internal sealed class MainForm : Form
+    internal sealed partial class MainForm : Form
     {
         private readonly RichTextBox txtCaption = new RichTextBox();
         private readonly RichTextBox txtLyrics = new RichTextBox();
@@ -28,41 +28,34 @@ namespace AIMusicGenerator
         private readonly NumericUpDown numSeconds = new NumericUpDown();
         private readonly NumericUpDown numSteps = new NumericUpDown();
         private readonly NumericUpDown numGuidance = new NumericUpDown();
-        private readonly ComboBox comboKey = new ComboBox();
-        private readonly ComboBox comboSignature = new ComboBox();
-        private readonly ComboBox comboLanguage = new ComboBox();
-        private readonly ComboBox comboFormat = new ComboBox();
-        private readonly ComboBox comboOffload = new ComboBox();
-        private readonly ComboBox comboTheme = new ComboBox();
-        private readonly ComboBox comboStyleTemplate = new ComboBox();
-        private readonly Button btnApplyTemplate = new Button();
-        private readonly Button btnExpandPrompt = new Button();
-        private readonly CheckBox chkAutoBpm = new CheckBox();
-        private readonly CheckBox chkInstrumental = new CheckBox();
-        private readonly CheckBox chkThinking = new CheckBox();
-        private readonly CheckBox chkKeepModel = new CheckBox();
-        private readonly CheckBox chkAutoVideo = new CheckBox();
+        private readonly ComboBox comboKey = new ThemedComboBox();
+        private readonly ComboBox comboSignature = new ThemedComboBox();
+        private readonly ComboBox comboLanguage = new ThemedComboBox();
+        private readonly ComboBox comboFormat = new ThemedComboBox();
+        private readonly ComboBox comboOffload = new ThemedComboBox();
+        private readonly ComboBox comboTheme = new ThemedComboBox();
+        private readonly ComboBox comboStyleTemplate = new ThemedComboBox();
+        private readonly ModernButton btnApplyTemplate = new ModernButton();
+        private readonly ModernButton btnExpandPrompt = new ModernButton();
+        private readonly ToggleSwitch chkAutoBpm = new ToggleSwitch();
+        private readonly ToggleSwitch chkInstrumental = new ToggleSwitch();
+        private readonly ToggleSwitch chkThinking = new ToggleSwitch();
+        private readonly ToggleSwitch chkKeepModel = new ToggleSwitch();
+        private readonly ToggleSwitch chkAutoVideo = new ToggleSwitch();
         private readonly Queue<KeyValuePair<string, string>> videoQueue =
             new Queue<KeyValuePair<string, string>>();
         private readonly object videoGate = new object();
         private bool videoRunning;
-        private readonly Button btnGenerate = new Button();
-        private readonly Button btnCancel = new Button();
-        private readonly Button btnOpen = new Button();
-        private readonly Button btnPlay = new Button();
-        private readonly Button btnLink = new Button();
-        private readonly NumericUpDown numPromptHeight = new NumericUpDown();
-        private readonly Panel resizeGrip = new Panel();
-        private bool resizingPrompt;
-        private Point promptResizeStart;
-        private Size promptResizeSize;
-        private int promptWidth = 1476;
-        private bool updatingPromptSize;
-        private readonly Button btnAdvanced = new Button();
-        private readonly Button btnSd = new Button();
-        private readonly Button btnTelegram = new Button();
-        private readonly Button btnAlbum = new Button();
-        private readonly Button btnMediaTools = new Button();
+        private readonly ModernButton btnGenerate = new ModernButton();
+        private readonly ModernButton btnCancel = new ModernButton();
+        private readonly ModernButton btnOpen = new ModernButton();
+        private readonly ModernButton btnPlay = new ModernButton();
+        private readonly ModernButton btnLink = new ModernButton();
+        private readonly ModernButton btnAdvanced = new ModernButton();
+        private readonly ModernButton btnSd = new ModernButton();
+        private readonly ModernButton btnTelegram = new ModernButton();
+        private readonly ModernButton btnAlbum = new ModernButton();
+        private readonly ModernButton btnMediaTools = new ModernButton();
         private Process albumProcess;
         private bool albumStarting;
         private bool albumCancelled;
@@ -80,18 +73,17 @@ namespace AIMusicGenerator
         private decimal shiftValue = 1.0m;
         private string mp3BitrateValue = "128k";
         private int mp3SampleRateValue = 48000;
-        private List<Control> lowerControls = new List<Control>();
-        private readonly Button btnPlayPause = new Button();
-        private readonly Button btnStop = new Button();
-        private readonly TrackBar seekBar = new TrackBar();
+        private readonly ModernButton btnPlayPause = new ModernButton();
+        private readonly ModernButton btnStop = new ModernButton();
+        private readonly SeekSlider seekBar = new SeekSlider();
         private readonly Label lblTime = new Label();
         private readonly WaveformPanel waveform = new WaveformPanel();
         private readonly WinTimer playbackTimer = new WinTimer();
-        private readonly CheckBox chkBatch = new CheckBox();
+        private readonly ToggleSwitch chkBatch = new ToggleSwitch();
         private readonly ListBox lstHistory = new ListBox();
-        private readonly Button btnBrowse = new Button();
-        private readonly Button btnCover = new Button();
-        private readonly ProgressBar bar = new ProgressBar();
+        private readonly ModernButton btnBrowse = new ModernButton();
+        private readonly ModernButton btnCover = new ModernButton();
+        private readonly SlimProgressBar bar = new SlimProgressBar();
         private readonly Label lblStatus = new Label();
         private readonly WinTimer finishTimer = new WinTimer();
         private readonly WinTimer logTimer = new WinTimer();
@@ -121,8 +113,6 @@ namespace AIMusicGenerator
         private int batchErrors;
         private bool batchActive;
         private bool softCancel;
-        private Image iconPlay;
-        private Image iconPause;
         private WaveOutEvent audioOutput;
         private WaveStream audioStream;
         private string loadedAudioPath = "";
@@ -142,18 +132,16 @@ namespace AIMusicGenerator
 
         public MainForm()
         {
-            Text = "AI Music Generator - ACE-Step 1.5";
-            Font = new Font("Microsoft JhengHei UI", 11F);
-            AutoScaleMode = AutoScaleMode.Dpi;
-            AutoScaleDimensions = new SizeF(96F, 96F);
-            ClientSize = new Size(1500, 1000);
-            MinimumSize = new Size(1200, 800);
+            Text = "AI Music Maker - ACE-Step 1.5";
+            Font = ThemeManager.UiFont;
+            AutoScaleMode = AutoScaleMode.None;
+            ClientSize = Dpi.S(1440, 900);
+            MinimumSize = Dpi.S(1100, 660);
             StartPosition = FormStartPosition.CenterScreen;
             WindowState = FormWindowState.Maximized;
             BuildUi();
             TryLoadIcon();
             ApplyTheme();
-            ApplyButtonIcons();
             LoadSettings();
             RefreshHistory();
             finishTimer.Interval = 700;
@@ -167,540 +155,6 @@ namespace AIMusicGenerator
             playbackTimer.Tick += OnPlaybackTimer;
             CleanupTempConfigs();
             LoadLimitsAsync();
-        }
-
-        private void BuildUi()
-        {
-            Label lblCaption = MakeLabel("提示詞 (Prompt / Caption)", 12, 12);
-            txtCaption.SetBounds(12, 44, promptWidth, 110);
-            txtCaption.ScrollBars = RichTextBoxScrollBars.Vertical;
-            txtCaption.WordWrap = true;
-            txtCaption.DetectUrls = false;
-            txtCaption.Anchor = AnchorStyles.Top | AnchorStyles.Left;
-            txtCaption.HandleCreated += delegate(object sender, EventArgs e)
-            {
-                txtCaption.ScrollBars = RichTextBoxScrollBars.Vertical;
-                txtCaption.WordWrap = true;
-            };
-            Label lblPromptHeight = MakeLabel("高度", 500, 12);
-            numPromptHeight.SetBounds(544, 8, 72, 28);
-            numPromptHeight.Minimum = 60;
-            numPromptHeight.Maximum = 10000;
-            numPromptHeight.Increment = 10;
-            numPromptHeight.Value = 110;
-            numPromptHeight.ValueChanged += OnPromptHeightChanged;
-
-            chkBatch.SetBounds(1090, 10, 386, 28);
-            chkBatch.Text = "批次（每行一個提示詞）";
-            chkBatch.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-
-            btnSd.SetBounds(620, 8, 84, 34);
-            btnSd.Text = "SD...";
-            btnSd.Font = new Font(Font.FontFamily, 11F);
-            btnSd.Click += OnSd;
-
-            btnAdvanced.SetBounds(712, 8, 120, 34);
-            btnAdvanced.Text = "設定";
-            btnAdvanced.Font = new Font(Font.FontFamily, 11F);
-            btnAdvanced.Click += OnAdvanced;
-
-            btnLink.SetBounds(900, 8, 180, 34);
-            btnLink.Text = "參考連結";
-            btnLink.Font = new Font(Font.FontFamily, 11F);
-            btnLink.Click += OnLinkPrompt;
-
-            comboTheme.DropDownStyle = ComboBoxStyle.DropDownList;
-            comboTheme.Items.AddRange(new object[] { "Mocha 深色", "Latte 淺色" });
-            comboTheme.SelectedIndex = 0;
-            comboTheme.Width = 90;
-            comboTheme.SelectedIndexChanged += OnThemeChanged;
-
-            lblPromptHeight.SetBounds(400, 10, 50, 24);
-            numPromptHeight.SetBounds(470, 4, 100, 32);
-            btnSd.SetBounds(578, 4, 84, 34);
-            btnAdvanced.SetBounds(670, 4, 120, 34);
-            btnLink.SetBounds(798, 4, 160, 34);
-            comboTheme.SetBounds(966, 4, 180, 32);
-            chkBatch.SetBounds(1156, 6, 330, 30);
-            btnLink.Anchor = AnchorStyles.Top | AnchorStyles.Left;
-            comboTheme.Anchor = AnchorStyles.Top | AnchorStyles.Left;
-            chkBatch.Anchor = AnchorStyles.Top | AnchorStyles.Left;
-
-            resizeGrip.SetBounds(txtCaption.Right - 16, txtCaption.Bottom - 16, 14, 14);
-            resizeGrip.BackColor = ThemeManager.Accent;
-            resizeGrip.Cursor = Cursors.SizeNWSE;
-            resizeGrip.MouseDown += OnPromptGripDown;
-            resizeGrip.MouseMove += OnPromptGripMove;
-            resizeGrip.MouseUp += OnPromptGripUp;
-
-            Label lblLyrics = MakeLabel("歌詞 (純音樂可留 [Instrumental])", 12, 170);
-            txtLyrics.SetBounds(12, 200, 1476, 64);
-            txtLyrics.ScrollBars = RichTextBoxScrollBars.Vertical;
-            txtLyrics.WordWrap = true;
-            txtLyrics.DetectUrls = false;
-            txtLyrics.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-
-            FlowLayoutPanel row1 = MakeRow(280);
-            Label lblBpm = MakeLabel("BPM", 0, 0);
-            AddRowLabel(row1, lblBpm);
-            numBpm.Minimum = 30;
-            numBpm.Maximum = 300;
-            numBpm.Value = 78;
-            numBpm.Width = 70;
-            AddRowControl(row1, numBpm, 10);
-            chkAutoBpm.Text = "自動";
-            chkAutoBpm.Checked = true;
-            chkAutoBpm.AutoSize = true;
-            chkAutoBpm.CheckedChanged += OnAutoBpmChanged;
-            AddRowControl(row1, chkAutoBpm, 18);
-
-            Label lblDuration = MakeLabel("時長", 0, 0);
-            AddRowLabel(row1, lblDuration);
-            numHours.Minimum = 0;
-            numHours.Maximum = 2;
-            numHours.Value = 0;
-            numHours.Width = 44;
-            numHours.ValueChanged += OnDurationPartsChanged;
-            AddRowControl(row1, numHours, 2);
-            AddRowLabel(row1, MakeLabel("時", 0, 0));
-            numMinutes.Minimum = 0;
-            numMinutes.Maximum = 59;
-            numMinutes.Value = 1;
-            numMinutes.Width = 44;
-            numMinutes.ValueChanged += OnDurationPartsChanged;
-            AddRowControl(row1, numMinutes, 2);
-            AddRowLabel(row1, MakeLabel("分", 0, 0));
-            numSeconds.Minimum = 0;
-            numSeconds.Maximum = 59;
-            numSeconds.Value = 0;
-            numSeconds.Width = 44;
-            numSeconds.ValueChanged += OnDurationPartsChanged;
-            AddRowControl(row1, numSeconds, 2);
-            AddRowLabel(row1, MakeLabel("秒", 0, 0));
-            numDuration.Minimum = 10;
-            numDuration.Maximum = 7200;
-            numDuration.Value = 60;
-
-            Label lblSteps = MakeLabel("步數", 0, 0);
-            AddRowLabel(row1, lblSteps);
-            numSteps.Minimum = 1;
-            numSteps.Maximum = 100;
-            numSteps.Value = 8;
-            numSteps.Width = 66;
-            AddRowControl(row1, numSteps, 18);
-
-            Label lblSeed = MakeLabel("種子", 0, 0);
-            AddRowLabel(row1, lblSeed);
-            txtSeed.Width = 120;
-            txtSeed.HandleCreated += delegate(object sender, EventArgs e)
-            {
-                SendMessage(txtSeed.Handle, EM_SETCUEBANNER, (IntPtr)1, "空白=隨機");
-            };
-            AddRowControl(row1, txtSeed, 18);
-
-            chkInstrumental.Text = "純音樂";
-            chkInstrumental.Checked = true;
-            chkInstrumental.AutoSize = true;
-            AddRowControl(row1, chkInstrumental, 18);
-
-            AddRowLabel(row1, MakeLabel("模板", 0, 0));
-            comboStyleTemplate.DropDownStyle = ComboBoxStyle.DropDownList;
-            comboStyleTemplate.Width = 150;
-            foreach (StyleTemplate template in StyleTemplates.All)
-                comboStyleTemplate.Items.Add(template);
-            if (comboStyleTemplate.Items.Count > 0) comboStyleTemplate.SelectedIndex = 0;
-            AddRowControl(row1, comboStyleTemplate, 8);
-            btnApplyTemplate.Text = "套用";
-            btnApplyTemplate.Width = 70;
-            btnApplyTemplate.Click += OnApplyStyleTemplate;
-            AddRowControl(row1, btnApplyTemplate, 8);
-            btnExpandPrompt.Text = "放大";
-            btnExpandPrompt.Width = 50;
-            btnExpandPrompt.Click += OnExpandPrompt;
-            AddRowControl(row1, btnExpandPrompt, 0);
-
-            chkThinking.Text = "LM 思考 (較慢)";
-            chkThinking.Checked = true;
-            chkThinking.AutoSize = true;
-            chkThinking.CheckedChanged += OnThinkingChanged;
-
-            FlowLayoutPanel row2 = MakeRow(330);
-            Label lblKey = MakeLabel("調性", 0, 0);
-            AddRowLabel(row2, lblKey);
-            comboKey.DropDownStyle = ComboBoxStyle.DropDownList;
-            comboKey.Items.AddRange(new object[]
-            {
-                "自動", "C Major", "C Minor", "C# Major", "C# Minor",
-                "D Major", "D Minor", "D# Major", "D# Minor",
-                "E Major", "E Minor", "F Major", "F Minor",
-                "F# Major", "F# Minor", "G Major", "G Minor",
-                "G# Major", "G# Minor", "A Major", "A Minor",
-                "A# Major", "A# Minor", "B Major", "B Minor"
-            });
-            comboKey.SelectedIndex = 0;
-            comboKey.Width = 200;
-            AddRowControl(row2, comboKey, 20);
-
-            Label lblSignature = MakeLabel("拍號", 0, 0);
-            AddRowLabel(row2, lblSignature);
-            comboSignature.DropDownStyle = ComboBoxStyle.DropDownList;
-            comboSignature.Items.AddRange(new object[] { "自動", "4", "3", "6" });
-            comboSignature.SelectedIndex = 0;
-            comboSignature.Width = 100;
-            AddRowControl(row2, comboSignature, 20);
-
-            Label lblGuidance = MakeLabel("Guidance", 0, 0);
-            AddRowLabel(row2, lblGuidance);
-            numGuidance.DecimalPlaces = 2;
-            numGuidance.Increment = 0.1m;
-            numGuidance.Minimum = 0.1m;
-            numGuidance.Maximum = 20m;
-            numGuidance.Value = 1.0m;
-            numGuidance.Width = 90;
-            AddRowControl(row2, numGuidance, 20);
-
-            Label lblLanguage = MakeLabel("語言", 0, 0);
-            AddRowLabel(row2, lblLanguage);
-            comboLanguage.DropDownStyle = ComboBoxStyle.DropDownList;
-            comboLanguage.Items.AddRange(new object[]
-            {
-                "unknown", "en", "zh", "yue", "ja", "ko", "es", "fr",
-                "de", "it", "pt", "ru", "ar", "hi", "th", "vi", "id", "tr"
-            });
-            comboLanguage.SelectedIndex = 0;
-            comboLanguage.Width = 220;
-            AddRowControl(row2, comboLanguage, 0);
-            AddRowControl(row2, chkThinking, 18);
-
-            FlowLayoutPanel row3 = MakeRow(380);
-            Label lblFormat = MakeLabel("輸出格式", 0, 0);
-            AddRowLabel(row3, lblFormat);
-            comboFormat.DropDownStyle = ComboBoxStyle.DropDownList;
-            comboFormat.Items.AddRange(new object[] { "wav", "flac", "mp3" });
-            comboFormat.SelectedIndex = 0;
-            comboFormat.Width = 100;
-            AddRowControl(row3, comboFormat, 20);
-
-            Label lblOffload = MakeLabel("Offload", 0, 0);
-            AddRowLabel(row3, lblOffload);
-            comboOffload.DropDownStyle = ComboBoxStyle.DropDownList;
-            comboOffload.Items.AddRange(new object[] { "auto", "save_vram" });
-            comboOffload.SelectedIndex = 0;
-            comboOffload.Width = 130;
-            AddRowControl(row3, comboOffload, 20);
-
-            Label lblOffloadHint = MakeLabel("(於下次模型載入生效)", 0, 0);
-            lblOffloadHint.ForeColor = Color.DimGray;
-            AddRowControl(row3, lblOffloadHint, 24);
-
-            chkKeepModel.Text = "取消時保留模型（背景跑完）";
-            chkKeepModel.AutoSize = true;
-            AddRowControl(row3, chkKeepModel, 18);
-
-            chkAutoVideo.Text = "自動轉影片";
-            chkAutoVideo.AutoSize = true;
-            AddRowControl(row3, chkAutoVideo, 0);
-
-            Label lblOut = MakeLabel("輸出資料夾", 12, 438);
-            txtOutDir.SetBounds(0, 0, 900, 34);
-            btnBrowse.SetBounds(0, 0, 104, 38);
-            btnBrowse.Text = "瀏覽...";
-            btnBrowse.Click += OnBrowse;
-
-            btnCover.SetBounds(0, 0, 100, 38);
-            btnTelegram.SetBounds(0, 0, 90, 38);
-            btnTelegram.Text = "TG";
-            btnTelegram.Click += OnTelegram;
-
-            btnAlbum.SetBounds(0, 0, 90, 38);
-            btnAlbum.Text = "專輯";
-            btnAlbum.Click += OnAlbum;
-            btnCover.Text = "封面...";
-            btnCover.Click += OnCover;
-
-            btnMediaTools.SetBounds(0, 0, 80, 38);
-            btnMediaTools.Text = "工具";
-            btnMediaTools.Click += OnMediaTools;
-
-            FlowLayoutPanel outRow = new FlowLayoutPanel();
-            outRow.SetBounds(12, 462, ClientSize.Width - 24, 44);
-            outRow.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            outRow.WrapContents = false;
-            outRow.BackColor = Color.Transparent;
-            foreach (Control item in new Control[] { txtOutDir, btnBrowse, btnCover, btnTelegram, btnAlbum, btnMediaTools })
-            {
-                item.Margin = new Padding(0, 3, 8, 0);
-                outRow.Controls.Add(item);
-            }
-
-            btnGenerate.SetBounds(12, 512, 170, 46);
-            btnGenerate.Text = "生成音樂";
-            btnGenerate.Font = new Font(Font, FontStyle.Bold);
-            btnGenerate.Click += OnGenerate;
-
-            btnCancel.SetBounds(190, 512, 110, 46);
-            btnCancel.Text = "取消";
-            btnCancel.Enabled = false;
-            btnCancel.Click += OnCancel;
-
-            btnOpen.SetBounds(310, 512, 190, 46);
-            btnOpen.Text = "開啟資料夾";
-            btnOpen.Enabled = false;
-            btnOpen.Click += OnOpenFolder;
-
-            btnPlay.SetBounds(510, 512, 110, 46);
-            btnPlay.Text = "播放";
-            btnPlay.Enabled = false;
-            btnPlay.Click += OnPlay;
-
-            lblStatus.SetBounds(640, 522, 848, 26);
-            lblStatus.Text = "待命 - 首次載入模型約需 1-5 分鐘，載入後保持常駐";
-            lblStatus.AutoEllipsis = true;
-            lblStatus.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-
-            btnPlayPause.SetBounds(12, 570, 120, 40);
-            btnPlayPause.Text = "播放";
-            btnPlayPause.Click += OnPlayPauseClick;
-
-            btnStop.SetBounds(140, 570, 120, 40);
-            btnStop.Text = "停止";
-            btnStop.Click += OnStopClick;
-
-            seekBar.SetBounds(272, 564, 1020, 50);
-            seekBar.Minimum = 0;
-            seekBar.Maximum = 1000;
-            seekBar.TickStyle = TickStyle.None;
-            seekBar.Scroll += OnSeekScroll;
-            seekBar.MouseDown += delegate(object sender, MouseEventArgs e) { scrubbing = true; };
-            seekBar.MouseUp += delegate(object sender, MouseEventArgs e) { scrubbing = false; SeekTo(seekBar.Value / 1000.0); };
-
-            lblTime.SetBounds(1300, 572, 220, 26);
-            lblTime.Text = "00:00 / 00:00";
-
-            waveform.SetBounds(12, 624, 1476, 40);
-            waveform.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            waveform.SeekRequested += OnWaveformSeek;
-
-            bar.SetBounds(12, 668, 1476, 16);
-            bar.Style = ProgressBarStyle.Blocks;
-            bar.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-
-            Label lblLog = MakeLabel("執行日誌", 12, 698);
-            txtLog.SetBounds(12, 724, 980, 264);
-            txtLog.Multiline = true;
-            txtLog.ReadOnly = true;
-            txtLog.ScrollBars = ScrollBars.Vertical;
-            txtLog.WordWrap = true;
-            txtLog.BackColor = Color.FromArgb(24, 24, 24);
-            txtLog.ForeColor = Color.Gainsboro;
-            txtLog.Font = new Font("Consolas", 10F);
-            txtLog.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left;
-
-            Label lblHistory = MakeLabel("歷史輸出（雙擊播放）", 1004, 698);
-            lstHistory.SetBounds(1004, 724, 484, 264);
-            lstHistory.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-            lstHistory.IntegralHeight = false;
-            lstHistory.DrawMode = DrawMode.OwnerDrawFixed;
-            lstHistory.ItemHeight = 32;
-            lstHistory.DrawItem += OnHistoryDrawItem;
-            lstHistory.SelectedIndexChanged += OnHistorySelected;
-            lstHistory.DoubleClick += delegate(object sender, EventArgs e) { PlaySelected(); };
-
-            Controls.AddRange(new Control[]
-            {
-                lblCaption, lblPromptHeight, numPromptHeight, btnSd, btnAdvanced, btnLink, comboTheme, chkBatch, txtCaption, resizeGrip, lblLyrics, txtLyrics,
-                row1, row2, row3,
-                lblOut, outRow,
-                btnGenerate, btnCancel, btnOpen, btnPlay,
-                btnPlayPause, btnStop, seekBar, lblTime, waveform,
-                lblStatus, bar, lblLog, txtLog, lblHistory, lstHistory
-            });
-
-            lowerControls = new List<Control>
-            {
-                lblLyrics, txtLyrics, row1, row2, row3,
-                lblOut, outRow,
-                btnGenerate, btnCancel, btnOpen, btnPlay, lblStatus,
-                btnPlayPause, btnStop, seekBar, lblTime, waveform, bar,
-                lblLog, txtLog, lblHistory, lstHistory
-            };
-
-            Resize += delegate
-            {
-                int maxWidth = Math.Max(300, ClientSize.Width - txtCaption.Left - 24);
-                if (txtCaption.Width > maxWidth) SetPromptWidth(maxWidth);
-                PositionGrip();
-            };
-
-            FormClosing += OnFormClosing;
-        }
-
-
-
-
-        private void TryLoadIcon()
-        {
-            try
-            {
-                string iconPath = System.IO.Path.Combine(
-                    AppDomain.CurrentDomain.BaseDirectory, "app.ico");
-                if (File.Exists(iconPath)) Icon = new Icon(iconPath);
-            }
-            catch (Exception)
-            {
-            }
-        }
-
-        [DllImport("dwmapi.dll")]
-        private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
-
-        protected override void OnHandleCreated(EventArgs e)
-        {
-            base.OnHandleCreated(e);
-            try
-            {
-                int enabled = 1;
-                DwmSetWindowAttribute(Handle, 20, ref enabled, sizeof(int));
-                DwmSetWindowAttribute(Handle, 19, ref enabled, sizeof(int));
-            }
-            catch (Exception)
-            {
-            }
-        }
-
-        private void ApplyTheme()
-        {
-            ThemeManager.Apply(this);
-            ThemeManager.StylePrimary(btnGenerate);
-            ThemeManager.StyleSuccess(btnPlayPause);
-            ThemeManager.StyleSuccess(btnPlay);
-            ThemeManager.StyleDanger(btnStop);
-            ThemeManager.StyleDanger(btnCancel);
-            lblStatus.ForeColor = ThemeManager.Dark
-                ? Color.FromArgb(148, 205, 255)
-                : Color.FromArgb(0, 100, 200);
-            txtLog.BackColor = ThemeManager.LogBack;
-            txtLog.ForeColor = ThemeManager.Text;
-            lstHistory.BackColor = ThemeManager.InputBack;
-            lstHistory.ForeColor = ThemeManager.Text;
-            waveform.ThemeDark = ThemeManager.Dark;
-            waveform.BackColor = ThemeManager.Dark
-                ? Color.FromArgb(18, 19, 24)
-                : Color.FromArgb(250, 250, 252);
-            waveform.Invalidate();
-            resizeGrip.BackColor = ThemeManager.Accent;
-            Invalidate(true);
-        }
-
-        private void OnThemeChanged(object sender, EventArgs e)
-        {
-            if (updatingPromptSize) return;
-            ThemeManager.SetTheme(comboTheme.SelectedIndex == 0);
-            ApplyTheme();
-            SaveSettings();
-        }
-
-        private void OnPromptGripDown(object sender, MouseEventArgs e)
-        {
-            resizingPrompt = true;
-            promptResizeStart = Cursor.Position;
-            promptResizeSize = txtCaption.Size;
-            resizeGrip.Capture = true;
-        }
-
-        private void OnPromptGripMove(object sender, MouseEventArgs e)
-        {
-            if (!resizingPrompt) return;
-            Point now = Cursor.Position;
-            int width = promptResizeSize.Width + (now.X - promptResizeStart.X);
-            int height = promptResizeSize.Height + (now.Y - promptResizeStart.Y);
-            SetPromptWidth(width);
-            SetPromptHeight(height);
-        }
-
-        private void OnPromptGripUp(object sender, MouseEventArgs e)
-        {
-            if (!resizingPrompt) return;
-            resizingPrompt = false;
-            resizeGrip.Capture = false;
-            SaveSettings();
-        }
-
-        private void SetPromptWidth(int width)
-        {
-            int maxWidth = Math.Max(300, ClientSize.Width - txtCaption.Left - 24);
-            width = Math.Max(300, Math.Min(maxWidth, width));
-            txtCaption.Width = width;
-            promptWidth = width;
-            PositionGrip();
-        }
-
-        private void PositionGrip()
-        {
-            resizeGrip.Left = txtCaption.Right - 16;
-            resizeGrip.Top = txtCaption.Bottom - 16;
-            resizeGrip.BringToFront();
-        }
-
-        private static FlowLayoutPanel MakeRow(int y)
-        {
-            FlowLayoutPanel row = new FlowLayoutPanel();
-            row.SetBounds(12, y, 1476, 44);
-            row.FlowDirection = FlowDirection.LeftToRight;
-            row.WrapContents = false;
-            row.AutoSize = false;
-            row.BackColor = Color.Transparent;
-            row.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            row.Margin = Padding.Empty;
-            return row;
-        }
-
-        private static void AddRowLabel(FlowLayoutPanel row, Label label)
-        {
-            label.Margin = new Padding(0, 11, 8, 0);
-            row.Controls.Add(label);
-        }
-
-        private static void AddRowControl(FlowLayoutPanel row, Control control, int rightMargin)
-        {
-            control.Margin = new Padding(0, 6, rightMargin, 0);
-            row.Controls.Add(control);
-        }
-
-        private static Label MakeLabel(string text, int x, int y)
-        {
-            Label label = new Label();
-            label.Text = text;
-            label.AutoSize = true;
-            label.Location = new Point(x, y);
-            return label;
-        }
-
-        private void OnPromptHeightChanged(object sender, EventArgs e)
-        {
-            if (updatingPromptSize) return;
-            SetPromptHeight((int)numPromptHeight.Value);
-        }
-
-        private void SetPromptHeight(int height)
-        {
-            if (lowerControls == null || lowerControls.Count == 0) return;
-            const int minimumLog = 80;
-            int maxHeight = txtCaption.Height + Math.Max(0, txtLog.Height - minimumLog);
-            if (height > maxHeight) height = maxHeight;
-            height = Math.Max(60, height);
-            int delta = height - txtCaption.Height;
-            if (delta == 0) return;
-            updatingPromptSize = true;
-            txtCaption.Height = height;
-            numPromptHeight.Value = height;
-            updatingPromptSize = false;
-            foreach (Control control in lowerControls)
-                control.Top += delta;
-            txtLog.Height = Math.Max(minimumLog, txtLog.Height - delta);
-            lstHistory.Height = txtLog.Height;
-            lstHistory.Top = txtLog.Top;
-            PositionGrip();
         }
 
         private void OnAutoBpmChanged(object sender, EventArgs e)
@@ -901,6 +355,7 @@ namespace AIMusicGenerator
             audioOutput.Init(audioStream);
             audioOutput.PlaybackStopped += OnPlaybackStopped;
             loadedAudioPath = path;
+            SetNowPlaying(path);
             seekBar.Value = 0;
             lblTime.Text = "00:00 / " + FormatTime(audioStream.TotalTime);
             waveform.Peaks = null;
@@ -929,48 +384,6 @@ namespace AIMusicGenerator
                 audioStream = null;
             }
             loadedAudioPath = "";
-        }
-
-        private void UpdatePlaybackUi()
-        {
-            bool playing = audioOutput != null && audioOutput.PlaybackState == PlaybackState.Playing;
-            btnPlayPause.Text = playing ? "暫停" : "播放";
-            btnPlayPause.Image = playing ? iconPause : iconPlay;
-        }
-
-        private void ApplyButtonIcons()
-        {
-            SetButtonIcon(btnGenerate, "sparkles");
-            SetButtonIcon(btnCancel, "x");
-            SetButtonIcon(btnOpen, "folder-open");
-            SetButtonIcon(btnPlay, "play");
-            SetButtonIcon(btnStop, "square");
-            iconPlay = LoadIcon("play");
-            iconPause = LoadIcon("pause");
-            btnPlayPause.Image = iconPlay;
-        }
-
-        private static Image LoadIcon(string name)
-        {
-            try
-            {
-                string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "icons", name + ".png");
-                if (File.Exists(path)) return Image.FromFile(path);
-            }
-            catch (Exception)
-            {
-            }
-            return null;
-        }
-
-        private static void SetButtonIcon(Button button, string name)
-        {
-            Image image = LoadIcon(name);
-            if (image == null) return;
-            button.Image = image;
-            button.ImageAlign = ContentAlignment.MiddleLeft;
-            button.TextImageRelation = TextImageRelation.ImageBeforeText;
-            button.Padding = new Padding(6, 0, 4, 0);
         }
 
         private void OnPlaybackTimer(object sender, EventArgs e)
@@ -1305,37 +718,6 @@ namespace AIMusicGenerator
                         AppendLog("重新載入播放失敗: " + ex.Message);
                     }
                 }
-            }
-        }
-
-        private void OnHistoryDrawItem(object sender, DrawItemEventArgs e)
-        {
-            if (e.Index < 0) return;
-            bool selected = (e.State & DrawItemState.Selected) != 0;
-            Color background = selected
-                ? (ThemeManager.Dark ? Color.FromArgb(49, 46, 129) : Color.FromArgb(224, 231, 255))
-                : (ThemeManager.Dark ? Color.FromArgb(26, 27, 35) : Color.White);
-            using (SolidBrush brush = new SolidBrush(background))
-            {
-                e.Graphics.FillRectangle(brush, e.Bounds);
-            }
-            if (selected)
-            {
-                using (SolidBrush indicator = new SolidBrush(Color.FromArgb(99, 102, 241)))
-                {
-                    e.Graphics.FillRectangle(indicator, e.Bounds.X, e.Bounds.Y, 3, e.Bounds.Height);
-                }
-            }
-            string text = lstHistory.Items[e.Index].ToString();
-            using (SolidBrush foreground = new SolidBrush(ThemeManager.Text))
-            {
-                e.Graphics.DrawString(text, e.Font, foreground,
-                    e.Bounds.X + 8, e.Bounds.Y + 4);
-            }
-            using (Pen separator = new Pen(ThemeManager.Border))
-            {
-                e.Graphics.DrawLine(separator, e.Bounds.Left, e.Bounds.Bottom - 1,
-                    e.Bounds.Right, e.Bounds.Bottom - 1);
             }
         }
 
@@ -2660,14 +2042,8 @@ namespace AIMusicGenerator
             txtOutDir.Text = GetString(s, "output_dir", Paths.Generated);
             txtSeed.Text = GetString(s, "seed", "");
             ThemeManager.SetTheme(GetBool(s, "theme_dark", true));
-            updatingPromptSize = true;
-            comboTheme.SelectedIndex = ThemeManager.Dark ? 0 : 1;
-            promptWidth = (int)Clamp(GetDecimal(s, "prompt_width", 1476m), 300m,
-                Math.Max(300m, ClientSize.Width - txtCaption.Left - 24));
-            txtCaption.Width = promptWidth;
-            updatingPromptSize = false;
             ApplyTheme();
-            PositionGrip();
+            savedSplitRatio = (double)Clamp(GetDecimal(s, "layout_split_ratio", 0.5m), 0.2m, 0.8m);
             negativePrompt = GetString(s, "lm_negative_prompt", "");
             fadeInValue = Clamp(GetDecimal(s, "fade_in_duration", 0m), 0m, 30m);
             fadeOutValue = Clamp(GetDecimal(s, "fade_out_duration", 0m), 0m, 30m);
@@ -2680,9 +2056,6 @@ namespace AIMusicGenerator
             sdModel = GetString(s, "sd_model", "");
             sdSteps = (int)Clamp(GetDecimal(s, "sd_steps", 20m), 8m, 40m);
             sdSize = (int)Clamp(GetDecimal(s, "sd_size", 512m), 512m, 768m);
-            int promptHeight = (int)Clamp(GetDecimal(s, "prompt_height", 110m), 60m, 10000m);
-            numPromptHeight.Value = promptHeight;
-            SetPromptHeight(promptHeight);
             coverPath = GetString(s, "cover_path", Paths.CoverFile);
             if (!File.Exists(coverPath)) coverPath = "";
             chkInstrumental.Checked = GetBool(s, "instrumental", true);
@@ -2715,9 +2088,8 @@ namespace AIMusicGenerator
                 s["lyrics"] = txtLyrics.Text;
                 s["output_dir"] = txtOutDir.Text;
                 s["seed"] = txtSeed.Text;
-                s["prompt_height"] = (int)numPromptHeight.Value;
                 s["theme_dark"] = ThemeManager.Dark;
-                s["prompt_width"] = promptWidth;
+                s["layout_split_ratio"] = CurrentSplitRatio();
                 s["lm_negative_prompt"] = negativePrompt;
                 s["fade_in_duration"] = (double)fadeInValue;
                 s["fade_out_duration"] = (double)fadeOutValue;
@@ -2856,75 +2228,6 @@ namespace AIMusicGenerator
                 AppendLog("UI TEST SINGLE error: " + ex.Message);
                 FinishUiTest(4);
             }
-        }
-
-        internal string UiSelfTest()
-        {
-            StringBuilder report = new StringBuilder();
-            try
-            {
-                ThemeManager.SetTheme(false);
-                ApplyTheme();
-                report.AppendLine("light_form=" + BackColor.ToArgb() +
-                                  " input=" + txtCaption.BackColor.ToArgb() +
-                                  " button=" + btnGenerate.BackColor.ToArgb());
-                ThemeManager.SetTheme(true);
-                ApplyTheme();
-                report.AppendLine("dark_form=" + BackColor.ToArgb() +
-                                  " input=" + txtCaption.BackColor.ToArgb() +
-                                  " button=" + btnGenerate.BackColor.ToArgb());
-                int oldWidth = txtCaption.Width;
-                int oldHeight = txtCaption.Height;
-                SetPromptWidth(700);
-                SetPromptHeight(200);
-                bool overlap = false;
-                foreach (Control control in lowerControls)
-                    if (control.Top < txtCaption.Bottom) overlap = true;
-                report.AppendLine("resize_width=" + txtCaption.Width +
-                                  " resize_height=" + txtCaption.Height +
-                                  " log_height=" + txtLog.Height +
-                                  " overlap=" + overlap +
-                                  " grip=" + resizeGrip.Left + "," + resizeGrip.Top);
-                SetPromptWidth(oldWidth);
-                SetPromptHeight(oldHeight);
-                report.AppendLine("restored_width=" + txtCaption.Width +
-                                  " restored_height=" + txtCaption.Height);
-                report.AppendLine("auto_video=" + chkAutoVideo.Text +
-                                  " checked=" + chkAutoVideo.Checked +
-                                  " visible=" + chkAutoVideo.Visible);
-                int oldSeconds = (int)numDuration.Value;
-                SetDurationFromSeconds(7200);
-                report.AppendLine("duration_max=" + numHours.Value + "h" + numMinutes.Value +
-                                  "m" + numSeconds.Value + "s total=" + numDuration.Value);
-                SetDurationFromSeconds(30);
-                report.AppendLine("duration_30s=" + numHours.Value + "h" + numMinutes.Value +
-                                  "m" + numSeconds.Value + "s total=" + numDuration.Value);
-                SetDurationFromSeconds(oldSeconds);
-                report.AppendLine("style_templates=" + comboStyleTemplate.Items.Count);
-                int oldPrompt = txtCaption.Height;
-                SetPromptHeight(10000);
-                report.AppendLine("prompt_max_height=" + txtCaption.Height);
-                SetPromptHeight(oldPrompt);
-                report.AppendLine("duration_parts=" + numHours.Value + "h" + numMinutes.Value +
-                                  "m" + numSeconds.Value + "s total=" + numDuration.Value);
-                comboStyleTemplate.SelectedIndex = 0;
-                OnApplyStyleTemplate(this, EventArgs.Empty);
-                report.AppendLine("template_apply=" + numBpm.Value + "|" +
-                                  Convert.ToString(comboKey.SelectedItem) + "|" +
-                                  txtCaption.TextLength + " chars");
-                report.AppendLine("template_ui_right=" + btnExpandPrompt.Right +
-                                  " row_width=" + btnExpandPrompt.Parent.Width);
-                using (MediaToolsDialog tools = new MediaToolsDialog(Paths.Generated, null))
-                {
-                    tools.CreateControl();
-                    report.AppendLine("media_tools_controls=" + tools.Controls.Count);
-                }
-            }
-            catch (Exception ex)
-            {
-                report.AppendLine("error=" + ex);
-            }
-            return report.ToString();
         }
 
         internal string PlayerTest(string path)

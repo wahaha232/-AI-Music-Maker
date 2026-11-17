@@ -30,12 +30,12 @@ namespace AIMusicGenerator
         private readonly ListBox lstFiles = new ListBox();
         private readonly NumericUpDown numFadeIn = new NumericUpDown();
         private readonly NumericUpDown numFadeOut = new NumericUpDown();
-        private readonly Button btnFade = new Button();
-        private readonly Button btnMerge = new Button();
-        private readonly Button btnNormalize = new Button();
-        private readonly Button btnPreview = new Button();
-        private readonly Button btnRefresh = new Button();
-        private readonly Button btnClose = new Button();
+        private readonly ModernButton btnFade = new ModernButton();
+        private readonly ModernButton btnMerge = new ModernButton();
+        private readonly ModernButton btnNormalize = new ModernButton();
+        private readonly ModernButton btnPreview = new ModernButton();
+        private readonly ModernButton btnRefresh = new ModernButton();
+        private readonly ModernButton btnClose = new ModernButton();
         private readonly TextBox txtLog = new TextBox();
         private readonly Label lblStatus = new Label();
         private bool busy;
@@ -44,109 +44,132 @@ namespace AIMusicGenerator
         {
             this.outputDir = outputDir;
             this.onChanged = onChanged;
-            Text = "媒體工具";
-            Font = new Font("Microsoft JhengHei UI", 11F);
-            ClientSize = new Size(980, 660);
-            StartPosition = FormStartPosition.CenterParent;
-            FormBorderStyle = FormBorderStyle.FixedDialog;
-            MaximizeBox = false;
-            MinimizeBox = false;
-            BackColor = Color.FromArgb(18, 19, 24);
-            ForeColor = Color.White;
+            UiBuild.DialogParts parts = UiBuild.Dialog(this, "媒體工具",
+                "淡入淡出、音量正規化、合併與預覽；處理結果另存新檔，不覆蓋原檔", "wrench", 1000, 700, true);
+            TableLayoutPanel body = parts.Body;
+            body.ColumnCount = 2;
+            body.ColumnStyles.Clear();
+            body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 58F));
+            body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 42F));
+            body.RowCount = 3;
+            body.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            body.RowStyles.Add(new RowStyle(SizeType.Absolute, Dpi.S(118)));
+            body.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
-            Label title = new Label();
-            title.SetBounds(12, 12, 700, 24);
-            title.Text = "音訊工具：淡入淡出、合併、音量正規化、封面預覽";
-            title.ForeColor = Color.FromArgb(200, 205, 218);
-
-            lstFiles.SetBounds(12, 44, 560, 430);
+            // left: files
+            CardPanel filesCard = UiBuild.NewCard("音檔", "list-music", "可按 Ctrl／Shift 多選");
+            filesCard.Margin = new Padding(0, 0, Dpi.S(6), Dpi.S(12));
             lstFiles.SelectionMode = SelectionMode.MultiExtended;
             lstFiles.IntegralHeight = false;
-            lstFiles.BackColor = Color.FromArgb(26, 27, 35);
-            lstFiles.ForeColor = Color.FromArgb(230, 233, 240);
-
-            btnRefresh.SetBounds(12, 484, 120, 34);
-            btnRefresh.Text = "重新整理";
-            btnRefresh.FlatStyle = FlatStyle.Flat;
-            btnRefresh.BackColor = Color.FromArgb(55, 58, 70);
-            btnRefresh.ForeColor = Color.White;
+            lstFiles.Font = ThemeManager.UiFont;
+            lstFiles.DrawMode = DrawMode.OwnerDrawFixed;
+            lstFiles.ItemHeight = Dpi.S(32);
+            lstFiles.DrawItem += OnDrawFile;
+            InputHost listHost = UiBuild.Host(lstFiles, Dpi.S(4, 4, 2, 4));
+            listHost.Cursor = Cursors.Default;
+            filesCard.Controls.Add(listHost);
+            UiBuild.Button(btnRefresh, "重新整理", "refresh-cw", ButtonKind.Secondary);
+            btnRefresh.Height = Dpi.S(30);
+            btnRefresh.IconSize = Dpi.S(15);
+            btnRefresh.Width = btnRefresh.GetPreferredSize(Size.Empty).Width;
             btnRefresh.Click += delegate { RefreshFiles(); };
+            UiBuild.AddHeaderTools(filesCard, btnRefresh);
+            body.Controls.Add(filesCard, 0, 0);
 
-            Label lblIn = MakeLabel("淡入(秒)", 590, 44);
-            numFadeIn.SetBounds(668, 40, 80, 28);
+            // right: actions
+            CardPanel actionsCard = UiBuild.NewCard("處理", "wrench", "");
+            actionsCard.Margin = new Padding(Dpi.S(6), 0, 0, Dpi.S(12));
+            TableLayoutPanel actions = new TableLayoutPanel();
+            actions.Dock = DockStyle.Fill;
+            actions.Margin = Padding.Empty;
+            actions.ColumnCount = 2;
+            actions.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            actions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+
             numFadeIn.DecimalPlaces = 1;
             numFadeIn.Increment = 0.5m;
             numFadeIn.Minimum = 0m;
             numFadeIn.Maximum = 30m;
             numFadeIn.Value = 2m;
-
-            Label lblOut = MakeLabel("淡出(秒)", 770, 44);
-            numFadeOut.SetBounds(848, 40, 80, 28);
             numFadeOut.DecimalPlaces = 1;
             numFadeOut.Increment = 0.5m;
             numFadeOut.Minimum = 0m;
             numFadeOut.Maximum = 30m;
             numFadeOut.Value = 3m;
 
-            SetupButton(btnFade, "套用淡入淡出", 590, 82, OnFade);
-            SetupButton(btnNormalize, "音量正規化 (-14 LUFS)", 590, 130, OnNormalize);
-            SetupButton(btnMerge, "合併選取（2 首以上）", 590, 178, OnMerge);
-            SetupButton(btnPreview, "預覽選取（1 首）", 590, 226, OnPreview);
+            UiBuild.AddSection(actions, "淡入淡出", false);
+            UiBuild.AddWide(actions, "淡入（秒）", UiBuild.Stepper(numFadeIn, Dpi.S(150)));
+            UiBuild.AddWide(actions, "淡出（秒）", UiBuild.Stepper(numFadeOut, Dpi.S(150)));
+            AddAction(actions, btnFade, "套用淡入淡出", "audio-waveform", ButtonKind.Secondary, OnFade);
+            UiBuild.AddSection(actions, "音量", true);
+            AddAction(actions, btnNormalize, "音量正規化（-14 LUFS）", "volume-2", ButtonKind.Secondary, OnNormalize);
+            UiBuild.AddSection(actions, "合併與預覽", true);
+            AddAction(actions, btnMerge, "合併選取（2 首以上）", "git-merge", ButtonKind.Secondary, OnMerge);
+            AddAction(actions, btnPreview, "預覽選取（1 首）", "play", ButtonKind.Primary, OnPreview);
+            Label hint = UiBuild.Note("合併輸出為 merged_日期_時間.mp3；預覽會顯示封面並播放，有同名 MP4 時可開啟影片。");
+            hint.MaximumSize = new Size(Dpi.S(360), 0);
+            hint.Margin = new Padding(0, Dpi.S(10), 0, 0);
+            UiBuild.AddFull(actions, hint, new RowStyle(SizeType.AutoSize));
+            actionsCard.Controls.Add(actions);
+            body.Controls.Add(actionsCard, 1, 0);
 
-            Label hint = new Label();
-            hint.SetBounds(590, 274, 370, 120);
-            hint.Text = "淡入淡出與正規化會建立新檔，不覆蓋原檔。\n" +
-                        "合併輸出為 merged_日期_時間.mp3。\n" +
-                        "預覽會顯示封面並播放音樂；有 MP4 時可開啟影片。";
-            hint.ForeColor = Color.FromArgb(150, 156, 170);
-
-            txtLog.SetBounds(12, 530, 950, 72);
-            txtLog.Multiline = true;
+            // bottom: log + status
             txtLog.ReadOnly = true;
             txtLog.ScrollBars = ScrollBars.Vertical;
-            txtLog.BackColor = Color.FromArgb(24, 24, 24);
-            txtLog.ForeColor = Color.Gainsboro;
-            txtLog.Font = new Font("Consolas", 9F);
-
-            lblStatus.SetBounds(12, 614, 800, 24);
+            txtLog.Tag = "log";
+            InputHost logHost = UiBuild.TextArea(txtLog, ThemeManager.MonoFont);
+            logHost.Tag = "log";
+            logHost.Margin = Padding.Empty;
+            body.Controls.Add(logHost, 0, 1);
+            body.SetColumnSpan(logHost, 2);
             lblStatus.Text = "就緒";
+            lblStatus.AutoSize = true;
+            lblStatus.Tag = "muted";
+            lblStatus.Margin = new Padding(0, Dpi.S(10), 0, 0);
+            body.Controls.Add(lblStatus, 0, 2);
+            body.SetColumnSpan(lblStatus, 2);
 
-            btnClose.SetBounds(850, 610, 110, 36);
-            btnClose.Text = "關閉";
-            btnClose.FlatStyle = FlatStyle.Flat;
-            btnClose.BackColor = Color.FromArgb(55, 58, 70);
-            btnClose.ForeColor = Color.White;
+            UiBuild.Button(btnClose, "關閉", "", ButtonKind.Secondary);
             btnClose.Click += delegate { Close(); };
+            UiBuild.AddFooterButton(parts.Footer, btnClose);
+            CancelButton = btnClose;
 
-            Controls.AddRange(new Control[]
-            {
-                title, lstFiles, btnRefresh, lblIn, numFadeIn, lblOut, numFadeOut,
-                btnFade, btnNormalize, btnMerge, btnPreview, hint, txtLog, lblStatus, btnClose
-            });
             ThemeManager.ApplyDialog(this);
-            ThemeManager.StylePrimary(btnPreview);
             Load += delegate { RefreshFiles(); };
         }
 
-        private static Label MakeLabel(string text, int x, int y)
+        private static void AddAction(TableLayoutPanel grid, ModernButton button, string text, string icon,
+            ButtonKind kind, EventHandler handler)
         {
-            Label label = new Label();
-            label.Text = text;
-            label.AutoSize = true;
-            label.Location = new Point(x, y);
-            label.ForeColor = Color.FromArgb(200, 205, 218);
-            return label;
+            UiBuild.Button(button, text, icon, kind);
+            button.Dock = DockStyle.Fill;
+            button.Height = Dpi.S(38);
+            button.Margin = new Padding(0, Dpi.S(4), 0, Dpi.S(4));
+            button.Click += handler;
+            UiBuild.AddFull(grid, button, new RowStyle(SizeType.Absolute, Dpi.S(46)));
         }
 
-        private static void SetupButton(Button button, string text, int x, int y,
-            EventHandler handler)
+        private void OnDrawFile(object sender, DrawItemEventArgs e)
         {
-            button.SetBounds(x, y, 370, 38);
-            button.Text = text;
-            button.FlatStyle = FlatStyle.Flat;
-            button.BackColor = Color.FromArgb(55, 58, 70);
-            button.ForeColor = Color.White;
-            button.Click += handler;
+            if (e.Index < 0) return;
+            Graphics g = e.Graphics;
+            bool selected = (e.State & DrawItemState.Selected) != 0;
+            Color back = ThemeManager.InputBack;
+            using (SolidBrush brush = new SolidBrush(back)) g.FillRectangle(brush, e.Bounds);
+            Rectangle row = new Rectangle(e.Bounds.X + Dpi.S(2), e.Bounds.Y + Dpi.S(1), e.Bounds.Width - Dpi.S(4), e.Bounds.Height - Dpi.S(2));
+            if (selected)
+            {
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                using (System.Drawing.Drawing2D.GraphicsPath path = Shapes.RoundedRect(row, Dpi.S(6)))
+                using (SolidBrush brush = new SolidBrush(ThemeManager.Blend(back, ThemeManager.Accent, ThemeManager.Dark ? 0.24 : 0.14)))
+                    g.FillPath(brush, path);
+            }
+            int icon = Dpi.S(16);
+            IconRenderer.Draw(g, "music", new RectangleF(row.X + Dpi.S(8), row.Y + (row.Height - icon) / 2F, icon, icon),
+                selected ? ThemeManager.Text : ThemeManager.Accent);
+            Rectangle text = new Rectangle(row.X + Dpi.S(32), row.Y, row.Width - Dpi.S(36), row.Height);
+            TextRenderer.DrawText(g, lstFiles.Items[e.Index].ToString(), lstFiles.Font, text, ThemeManager.Text,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
         }
 
         private void RefreshFiles()

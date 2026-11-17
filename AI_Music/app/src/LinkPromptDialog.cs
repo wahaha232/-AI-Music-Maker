@@ -8,79 +8,62 @@ namespace AIMusicGenerator
     internal sealed class LinkPromptDialog : Form
     {
         private readonly TextBox txtUrl = new TextBox();
-        private readonly Button btnParse = new Button();
-        private readonly ComboBox comboOutputLanguage = new ComboBox();
+        private readonly ModernButton btnParse = new ModernButton();
+        private readonly ComboBox comboOutputLanguage = new ThemedComboBox();
         private LinkInfo lastInfo;
         private readonly Label lblStatus = new Label();
         private readonly Label lblMeta = new Label();
         private readonly TextBox txtPreview = new TextBox();
-        private readonly Button btnApply = new Button();
-        private readonly Button btnCancel = new Button();
+        private readonly ModernButton btnApply = new ModernButton();
+        private readonly ModernButton btnCancel = new ModernButton();
 
         public string SuggestedPrompt { get; private set; }
         private string suggestionPrompt = "";
 
         public LinkPromptDialog()
         {
-            Text = "參考連結 → 提示詞";
-            Font = new Font("Microsoft JhengHei UI", 10F);
-            ClientSize = new Size(720, 500);
-            MinimumSize = new Size(720, 500);
-            StartPosition = FormStartPosition.CenterParent;
-            FormBorderStyle = FormBorderStyle.FixedDialog;
-            MaximizeBox = false;
-            MinimizeBox = false;
-            BackColor = Color.FromArgb(18, 19, 24);
-            ForeColor = Color.FromArgb(232, 234, 241);
-            BuildUi();
+            UiBuild.DialogParts parts = UiBuild.Dialog(this, "參考連結 → 提示詞",
+                "貼上 YouTube／Spotify 連結；只讀取 metadata，不下載音訊", "link", 760, 580, false);
+            BuildUi(parts);
             ThemeManager.ApplyDialog(this);
-            ThemeManager.StylePrimary(btnParse);
-            ThemeManager.StylePrimary(btnApply);
         }
 
-        private void BuildUi()
+        private void BuildUi(UiBuild.DialogParts parts)
         {
-            Label hint = MakeLabel("貼上 YouTube / Spotify 連結（只讀 metadata，不下載音訊）", 12, 12);
-            hint.ForeColor = Color.FromArgb(188, 194, 208);
+            TableLayoutPanel body = parts.Body;
+            body.ColumnCount = 2;
+            body.ColumnStyles.Clear();
+            body.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
 
-            txtUrl.SetBounds(12, 40, 580, 28);
-            txtUrl.BackColor = Color.FromArgb(30, 32, 40);
-            txtUrl.ForeColor = Color.FromArgb(240, 242, 247);
-            txtUrl.BorderStyle = BorderStyle.FixedSingle;
             txtUrl.Text = "https://www.youtube.com/watch?v=";
+            UiBuild.Button(btnParse, "解析", "sparkles", ButtonKind.Primary);
+            btnParse.Click += OnParse;
+            UiBuild.AddWide(body, "連結", UiBuild.Fill(UiBuild.TextField(txtUrl), btnParse));
 
-            Label lblLanguage = MakeLabel("輸出語言", 470, 12);
-            comboOutputLanguage.SetBounds(538, 8, 170, 28);
-            comboOutputLanguage.DropDownStyle = ComboBoxStyle.DropDownList;
             comboOutputLanguage.Items.AddRange(new object[] { "English", "繁體中文" });
             comboOutputLanguage.SelectedIndex = 0;
-            comboOutputLanguage.BackColor = Color.FromArgb(30, 32, 40);
-            comboOutputLanguage.ForeColor = Color.FromArgb(240, 242, 247);
             comboOutputLanguage.SelectedIndexChanged += delegate { RefreshLanguage(); };
+            UiBuild.AddWide(body, "輸出語言", UiBuild.Row(UiBuild.ComboFixed(comboOutputLanguage, Dpi.S(160)),
+                UiBuild.Unit("建議提示詞使用英文，模型理解較好")));
 
-            btnParse.SetBounds(600, 40, 96, 28);
-            btnParse.Text = "解析";
-            StyleButton(btnParse, true);
-            btnParse.Click += OnParse;
+            lblStatus.AutoSize = true;
+            lblStatus.Tag = "accent";
+            lblStatus.Font = ThemeManager.HeadingFont;
+            lblStatus.Margin = new Padding(0, Dpi.S(12), 0, Dpi.S(2));
+            UiBuild.AddFull(body, lblStatus, new RowStyle(SizeType.AutoSize));
+            lblMeta.AutoSize = true;
+            lblMeta.Tag = "muted";
+            lblMeta.MaximumSize = new Size(Dpi.S(700), 0);
+            lblMeta.Margin = new Padding(0, 0, 0, Dpi.S(6));
+            UiBuild.AddFull(body, lblMeta, new RowStyle(SizeType.AutoSize));
 
-            lblStatus.SetBounds(12, 76, 684, 22);
-            lblStatus.ForeColor = Color.FromArgb(148, 205, 255);
-
-            lblMeta.SetBounds(12, 104, 684, 44);
-            lblMeta.ForeColor = Color.FromArgb(188, 194, 208);
-
-            txtPreview.SetBounds(12, 154, 684, 276);
-            txtPreview.Multiline = true;
             txtPreview.ReadOnly = true;
             txtPreview.ScrollBars = ScrollBars.Vertical;
-            txtPreview.BackColor = Color.FromArgb(12, 13, 18);
-            txtPreview.ForeColor = Color.FromArgb(226, 229, 238);
-            txtPreview.Font = new Font("Consolas", 9F);
+            UiBuild.AddFull(body, UiBuild.TextArea(txtPreview, ThemeManager.MonoFont), new RowStyle(SizeType.Percent, 100F));
 
-            btnApply.SetBounds(480, 448, 110, 34);
-            btnApply.Text = "套用提示詞";
+            UiBuild.Button(btnApply, "套用提示詞", "check", ButtonKind.Primary);
             btnApply.Enabled = false;
-            StyleButton(btnApply, true);
             btnApply.Click += delegate
             {
                 SuggestedPrompt = suggestionPrompt.Length > 0 ? suggestionPrompt : txtPreview.Text.Trim();
@@ -88,41 +71,11 @@ namespace AIMusicGenerator
                 DialogResult = DialogResult.OK;
                 Close();
             };
-
-            btnCancel.SetBounds(600, 448, 96, 34);
-            btnCancel.Text = "取消";
-            StyleButton(btnCancel, false);
+            UiBuild.Button(btnCancel, "取消", "", ButtonKind.Secondary);
             btnCancel.Click += delegate { DialogResult = DialogResult.Cancel; Close(); };
-
-            Controls.AddRange(new Control[]
-            {
-                hint, lblLanguage, comboOutputLanguage, txtUrl, btnParse,
-                lblStatus, lblMeta, txtPreview, btnApply, btnCancel
-            });
-        }
-
-        private static Label MakeLabel(string text, int x, int y)
-        {
-            Label label = new Label();
-            label.Text = text;
-            label.AutoSize = true;
-            label.Location = new Point(x, y);
-            label.BackColor = Color.Transparent;
-            return label;
-        }
-
-        private static void StyleButton(Button button, bool primary)
-        {
-            button.FlatStyle = FlatStyle.Flat;
-            button.FlatAppearance.BorderSize = 1;
-            button.FlatAppearance.BorderColor = primary
-                ? Color.FromArgb(124, 92, 255)
-                : Color.FromArgb(58, 62, 75);
-            button.BackColor = primary
-                ? Color.FromArgb(108, 92, 231)
-                : Color.FromArgb(38, 41, 51);
-            button.ForeColor = Color.White;
-            button.Cursor = Cursors.Hand;
+            UiBuild.AddFooterButton(parts.Footer, btnApply);
+            UiBuild.AddFooterButton(parts.Footer, btnCancel);
+            CancelButton = btnCancel;
         }
 
         private void RefreshLanguage()
