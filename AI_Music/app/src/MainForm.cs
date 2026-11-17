@@ -631,8 +631,13 @@ namespace AIMusicGenerator
                         AppendLog(message);
                     }))
                         throw new InvalidOperationException("SD API 無法啟動");
-                    if (sdModel.Length > 0) SdCoverClient.SelectModel(sdUrl, sdModel);
+                    if (sdModel.Length > 0)
+                    {
+                        AppendLog("SD 切換模型: " + sdModel);
+                        SdCoverClient.SelectModel(sdUrl, sdModel);
+                    }
                     string prompt = BuildCoverPrompt(target);
+                    AppendLog("SD 產生封面...");
                     SdCoverClient.GenerateCover(sdUrl, prompt,
                         "text, watermark, logo, letters, blurry, low quality, deformed",
                         sdSize, sdSize, sdSteps, cover);
@@ -651,6 +656,15 @@ namespace AIMusicGenerator
                 catch (Exception ex)
                 {
                     AppendLog("SD 封面失敗，使用預設封面: " + ex.Message);
+                    try { SdCoverClient.Stop(); } catch (Exception) { }
+                    try
+                    {
+                        BeginInvoke(new Action(delegate()
+                        {
+                            SetStatus("SD 封面失敗: " + ex.Message);
+                        }));
+                    }
+                    catch (InvalidOperationException) { }
                     try
                     {
                         BeginInvoke(new Action(delegate()
@@ -1117,7 +1131,11 @@ namespace AIMusicGenerator
                         AppendLog(message);
                     }))
                         throw new InvalidOperationException("SD API 無法啟動");
-                    if (sdModel.Length > 0) SdCoverClient.SelectModel(sdUrl, sdModel);
+                    if (sdModel.Length > 0)
+                    {
+                        AppendLog("SD 切換模型: " + sdModel);
+                        SdCoverClient.SelectModel(sdUrl, sdModel);
+                    }
                     string coverPrompt = (prompt ?? "") +
                         ", album cover art, square composition, cinematic lighting, warm atmosphere, "
                         + "no text, no watermark, high quality";
@@ -1143,6 +1161,7 @@ namespace AIMusicGenerator
                 catch (Exception ex)
                 {
                     AppendLog("專輯 SD 封面失敗: " + ex.Message);
+                    try { SdCoverClient.Stop(); } catch (Exception) { }
                     try
                     {
                         BeginInvoke(new Action(delegate()

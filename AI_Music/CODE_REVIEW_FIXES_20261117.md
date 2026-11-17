@@ -219,3 +219,23 @@ Commit：`33dfd4a`
 
 - SD／ACE-Step 完整 OOM 實機驗證、Telegram 併發與 5 分鐘閒置卸載仍需實機測試。
 - P2-02 本質上是協作式鎖，外部程式仍不受保護。
+
+## 第 6 批（SD 實機驗證）
+
+分支：`fix/review-batch6`
+Commit：提交後填入
+
+### 實機測試
+
+- 第一次 `--ui-test-single`（SD 啟用、10 秒曲）：SD API 就緒，但封面請求「作業逾時」，測試 exit 3；無 cover。
+- 診斷 `--sd-test`：SD WebUI 可正常啟動並產生 351,584 bytes cover。
+- 修正：`SelectModel` timeout 60s→300s；`GenerateCover` 300s→900s；SD 失敗時 `SdCoverClient.Stop()`；狀態列顯示 SD 失敗原因；新增 `--gpu-lease-test`。
+- 第三次 `--ui-test-single`：**exit 0**，產出 `ace_20261117_220745_seed2479470960.cover.png` 411,045 bytes；MP3 573,439 bytes；測試結束後 GPU lock 可重新取得，SD 程序已停止。
+- 因為 `--ui-test-single` 在 cover 完成後立即關閉，該次沒有等到自動影片完成；正常 App 保持開啟時會照常轉 MP4。
+
+### 驗證
+
+- `build.ps1`：編譯＋selftest＋15 tests OK。
+- `--gpu-lease-test`：`locked`，exit 0。
+- SD 封面、GpuLease、ACE daemon 釋放流程已實機通過。
+- 尚未大規模測試 Telegram 併發與 5 分鐘閒置卸載。

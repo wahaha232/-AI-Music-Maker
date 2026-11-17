@@ -73,6 +73,17 @@ namespace AIMusicGenerator
                 }
                 return;
             }
+            if (args.Length >= 1 && args[0] == "--gpu-lease-test")
+            {
+                string error;
+                GpuLease lease = GpuLease.Acquire("test", 5, out error);
+                Directory.CreateDirectory(Paths.TempDir);
+                File.WriteAllText(Path.Combine(Paths.TempDir, "gpu_lease_test.txt"),
+                    lease == null ? "failed: " + error : "locked");
+                if (lease != null) lease.Dispose();
+                Environment.Exit(lease == null ? 1 : 0);
+                return;
+            }
             if (args.Length >= 2 && args[0] == "--sd-test")
             {
                 try
