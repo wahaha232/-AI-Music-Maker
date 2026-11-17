@@ -288,7 +288,7 @@ Commit：`c184fec`
 ## 第 9 批（長曲接入 Telegram）
 
 分支：`fix/review-batch9`
-Commit：提交後填入
+Commit：`d7a0ce0`
 
 | 項目 | 修改檔案 | 狀態 | 驗證證據 |
 |---|---|---|---|
