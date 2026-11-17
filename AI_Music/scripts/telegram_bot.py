@@ -2,6 +2,7 @@
 
 Commands:
   /gen <prompt>          generate audio and send it back
+  /longform <prompt>     chunked long track with crossfade
   /album <title> | ...   generate an album (prompts separated by ;)
   /status                show current job and settings
   /cancel                cancel the running job
@@ -36,6 +37,7 @@ BASE = Path(__file__).resolve().parents[1]
 BACKEND = BASE / "app" / "generate_backend.py"
 VIDEO_TOOL = BASE / "scripts" / "music_to_video.py"
 AUDIO_TOOL = BASE / "scripts" / "audio_edit.py"
+LONGFORM_TOOL = BASE / "scripts" / "longform_generate.py"
 CONFIG = Path(os.environ.get("APPDATA", str(Path.home()))) / "AIMusicGenerator" / "telegram.json"
 STATE_FILE = CONFIG.parent / "telegram_settings.json"
 OUT_DIR = BASE / "generated" / "telegram"
@@ -414,6 +416,91 @@ def run_album_job(token: str, chat_id: int, title: str, prompts: list[str],
         current.update(running=False, prompt="", started=0.0, process=None, cancel=False)
 
 
+def run_longform_job(token: str, chat_id: int, prompt: str,
+                     job_settings: dict | None = None) -> None:
+    job_settings = dict(settings) if job_settings is None else dict(job_settings)
+    duration = job_settings["duration"]
+    if duration <= 300:
+        send(token, chat_id, "長曲模式需要超過 5 分鐘；短曲請用 /gen。")
+        return
+    job_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    job_dir = OUT_DIR / ("long_" + job_id)
+    job_dir.mkdir(parents=True, exist_ok=True)
+    output = job_dir / "longform.mp3"
+    base = {
+        "caption": prompt,
+        "lyrics": "[Instrumental]",
+        "instrumental": True,
+        "thinking": duration <= 480,
+        "bpm": None,
+        "keyscale": "",
+        "timesignature": "",
+        "vocal_language": "unknown",
+        "duration": duration,
+        "inference_steps": 8,
+        "guidance_scale": 1.0,
+        "seed": -1,
+        "output_dir": str(job_dir),
+        "filename_prefix": "longform",
+        "audio_format": "mp3",
+        "offload_mode": "auto",
+        "fade_in_duration": job_settings["fade_in"],
+        "fade_out_duration": job_settings["fade_out"],
+    }
+    config_path = job_dir / "base.json"
+    config_path.write_text(json.dumps(base, ensure_ascii=False), encoding="utf-8")
+    current.update(running=True, prompt="longform: " + prompt, started=time.time(),
+                   process=None, cancel=False)
+    send(token, chat_id,
+         f"開始長曲分段：{format_duration(duration)}，每段約 4 分鐘、5 秒交叉淡化。")
+    log_path = job_dir / "run.log"
+    try:
+        with open(log_path, "w", encoding="utf-8") as log_handle:
+            process = subprocess.Popen(
+                [sys.executable, "-u", str(LONGFORM_TOOL),
+                 "--config", str(config_path), "--duration", str(duration),
+                 "--chunk", "240", "--crossfade", "5", "--out", str(output),
+                 "--gpu-wait", "60"],
+                stdout=log_handle, stderr=subprocess.STDOUT,
+            )
+            current["process"] = process
+            try:
+                code = process.wait(timeout=21600)
+            except subprocess.TimeoutExpired:
+                kill_process(process)
+                code = -1
+        current["process"] = None
+        if current["cancel"]:
+            send(token, chat_id, "已取消長曲生成。")
+            return
+        if code == 75:
+            owner = busy_owner(log_path)
+            send(token, chat_id,
+                 f"GPU 正被使用中（{owner}）。請關閉 App 釋放模型後再試。")
+            return
+        if code != 0 or not output.is_file():
+            send(token, chat_id, f"長曲失敗（exit {code}），請查看日誌。")
+            return
+        add_recent(output)
+        size_mb = output.stat().st_size / 1024 / 1024
+        send(token, chat_id, f"長曲完成：{output.name}（{size_mb:.1f} MB）")
+        if size_mb <= 49:
+            send_document(token, chat_id, output, prompt[:200], "audio/mpeg")
+        else:
+            send(token, chat_id, "檔案超過 Telegram 單檔 50 MB 限制，未傳送。")
+        if job_settings["video"] and duration <= 1800:
+            video = make_video(output, int(duration))
+            if video is not None:
+                send_video(token, chat_id, video, f"長曲影片 {video.name}")
+        elif job_settings["video"]:
+            send(token, chat_id, "長曲影片超過 30 分鐘，已略過自動轉檔。")
+    except Exception as exc:
+        log(f"longform job failed: {exc}")
+        send(token, chat_id, f"長曲失敗：{exc}")
+    finally:
+        current.update(running=False, prompt="", started=0.0, process=None, cancel=False)
+
+
 def merge_recent(token: str, chat_id: int, count: int) -> None:
     with recent_lock:
         files = [Path(path) for path in recent[-count:]] if count > 0 else []
@@ -493,6 +580,19 @@ def main() -> int:
                     position = job_queue.qsize() + 1
                     job_queue.put(lambda p=prompt, s=snapshot: run_job(token, chat_id, p, s))
                     send(token, chat_id, f"已排入佇列 #{position}。")
+                elif text.startswith("/longform "):
+                    prompt = text[10:].strip()
+                    if not prompt:
+                        send(token, chat_id, "用法：/longform <音樂描述>（先用 /duration 設定長度）")
+                        continue
+                    if settings["duration"] <= 300:
+                        send(token, chat_id, "請先用 /duration 設定超過 5 分鐘的長度。")
+                        continue
+                    snapshot = dict(settings)
+                    position = job_queue.qsize() + 1
+                    job_queue.put(lambda p=prompt, s=snapshot:
+                                  run_longform_job(token, chat_id, p, s))
+                    send(token, chat_id, f"長曲已排入佇列 #{position}。")
                 elif text.startswith("/album "):
                     payload = text[7:].strip()
                     if "|" not in payload:
@@ -593,6 +693,7 @@ def main() -> int:
                     send(token, chat_id,
                          "AI Music Maker 遠端控制\n"
                          "/gen <提示詞> 生成並回傳音訊\n"
+                         "/longform <提示詞> 長曲分段＋交叉淡化\n"
                          "/album 名稱 | 提示詞1 ; 提示詞2\n"
                          "/status 狀態與設定\n"
                          "/cancel 取消目前工作\n"

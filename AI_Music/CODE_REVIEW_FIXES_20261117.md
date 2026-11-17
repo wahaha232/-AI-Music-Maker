@@ -284,3 +284,21 @@ Commit：`c184fec`
 - 長曲尚未接入 App UI／Telegram 指令，目前是 CLI。
 - YouTube 尚未提供 OAuth client，無法做私人上傳實機測試。
 - 分段接縫仍可能出現和聲／節奏漂移；需 30 分鐘實聽驗證。
+
+## 第 9 批（長曲接入 Telegram）
+
+分支：`fix/review-batch9`
+Commit：提交後填入
+
+| 項目 | 修改檔案 | 狀態 | 驗證證據 |
+|---|---|---|---|
+| Telegram `/longform` | `telegram_bot.py` | 程式完成；實機未驗證 | 建立 base config、呼叫 `longform_generate.py`、納入佇列、支援取消 |
+| 長曲傳送限制 | `telegram_bot.py` | 完成 | 超過 49 MB 不傳送並提示 Telegram 50 MB 限制 |
+| 長曲影片 | `telegram_bot.py` | 完成 | 30 分鐘內才自動轉 MP4，超過則略過 |
+| 編譯 | - | 通過 | `py_compile telegram_bot.py` 成功 |
+
+### 說明
+
+- `/longform <提示詞>` 需先 `/duration` 設定超過 5 分鐘。
+- 每段 240 秒、crossfade 5 秒，使用 album 模式讓模型只載入一次。
+- Telegram Bot API 單檔上限 50 MB，120 分鐘長曲無法直接傳送；檔案仍留在本機輸出資料夾。
