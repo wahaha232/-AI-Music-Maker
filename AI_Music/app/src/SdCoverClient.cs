@@ -112,7 +112,7 @@ namespace AIMusicGenerator
             {
                 { "sd_model_checkpoint", title }
             });
-            PostJson(url.TrimEnd('/') + "/sdapi/v1/options", body, 60000);
+            PostJson(url.TrimEnd('/') + "/sdapi/v1/options", body, 300000);
         }
 
         public static void GenerateCover(string url, string prompt, string negative,
@@ -128,7 +128,7 @@ namespace AIMusicGenerator
             payload["sampler_name"] = "Euler a";
             payload["seed"] = -1;
             string json = PostJson(url.TrimEnd('/') + "/sdapi/v1/txt2img",
-                Serializer.Serialize(payload), 300000);
+                Serializer.Serialize(payload), 900000);
             Dictionary<string, object> data = Serializer.Deserialize<Dictionary<string, object>>(json);
             object imagesObject;
             if (data == null || !data.TryGetValue("images", out imagesObject))
