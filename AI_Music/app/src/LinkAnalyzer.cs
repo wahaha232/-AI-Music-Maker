@@ -154,6 +154,13 @@ namespace AIMusicGenerator
             return info;
         }
 
+        private static bool ContainsKeyword(string text, string keyword)
+        {
+            if (Regex.IsMatch(keyword, "^[a-z0-9]+$"))
+                return Regex.IsMatch(text, "\\b" + Regex.Escape(keyword) + "\\b");
+            return text.Contains(keyword);
+        }
+
         public static PromptSuggestion Suggest(LinkInfo info, bool instrumental, bool chinese = false)
         {
             string haystack = (info.Title + " " + info.Artist + " " + info.Album + " " + info.Description)
@@ -173,8 +180,8 @@ namespace AIMusicGenerator
                     {
                         string keyword = Convert.ToString(keywordObject).ToLowerInvariant();
                         if (keyword.Length == 0) continue;
-                        if (titleArtist.Contains(keyword)) score += 3;
-                        else if (haystack.Contains(keyword)) score += 1;
+                        if (ContainsKeyword(titleArtist, keyword)) score += 3;
+                        else if (ContainsKeyword(haystack, keyword)) score += 1;
                     }
                 }
                 if (score > bestScore)

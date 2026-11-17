@@ -108,6 +108,8 @@ namespace AIMusicGenerator
         private int maxDurationWithLm = 480;
         private bool updatingDuration;
         private readonly Queue<Dictionary<string, object>> batchQueue = new Queue<Dictionary<string, object>>();
+        private readonly List<string> batchOutputs = new List<string>();
+        private string batchPrompt = "";
         private int batchTotal;
         private int batchCompleted;
         private int batchErrors;
@@ -466,6 +468,13 @@ namespace AIMusicGenerator
         {
             if (sdEnabled && sdModel.Length > 0)
             {
+                Process oldDaemon = daemon;
+                if (oldDaemon != null && !jobRunning)
+                {
+                    AppendLog("=== 釋放 ACE-Step 模型以產生 SD 封面 ===");
+                    KillDaemon();
+                    try { oldDaemon.WaitForExit(5000); } catch (Exception) { }
+                }
                 StartSdCover(path);
                 return;
             }
@@ -1047,6 +1056,12 @@ namespace AIMusicGenerator
 
             if (sdEnabled && sdModel.Length > 0 && files.Count > 0)
             {
+                Process oldDaemon = daemon;
+                if (oldDaemon != null)
+                {
+                    KillDaemon();
+                    try { oldDaemon.WaitForExit(5000); } catch (Exception) { }
+                }
                 StartAlbumCover(files, firstPrompt);
                 SetStatus("專輯完成，正在產生 SD 封面...");
             }
@@ -1142,6 +1157,14 @@ namespace AIMusicGenerator
                 MessageBox.Show(this, "Telegram bot 已在執行。", "Telegram",
                     MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
+            }
+            if (daemon != null && !jobRunning &&
+                (albumProcess == null || albumProcess.HasExited))
+            {
+                AppendLog("=== 釋放常駐模型，切換為 Telegram 遠端模式 ===");
+                Process oldDaemon = daemon;
+                KillDaemon();
+                try { oldDaemon.WaitForExit(5000); } catch (Exception) { }
             }
             string script = Path.Combine(Paths.Workspace, "AI_Music", "scripts", "telegram_bot.py");
             if (!File.Exists(script))
@@ -1340,6 +1363,8 @@ namespace AIMusicGenerator
             restartRequested = false;
 
             batchQueue.Clear();
+            batchOutputs.Clear();
+            batchPrompt = "";
             batchActive = false;
             if (chkBatch.Checked)
             {
@@ -1357,6 +1382,7 @@ namespace AIMusicGenerator
                     return;
                 }
                 batchActive = true;
+                batchPrompt = prompts[0];
                 batchTotal = prompts.Count;
                 batchCompleted = 0;
                 batchErrors = 0;
@@ -1492,6 +1518,7 @@ namespace AIMusicGenerator
             restartRequested = false;
             batchActive = false;
             batchQueue.Clear();
+            batchOutputs.Clear();
             if (chkKeepModel.Checked && daemonReady)
             {
                 softCancel = true;
@@ -1556,6 +1583,24 @@ namespace AIMusicGenerator
         {
             string clean = Regex.Replace(line, "\\x1B\\[[0-9;]*m", "");
             if (isError) clean = clean.Replace("\t", "    ");
+            bool videoProgress = clean.StartsWith("[video]") &&
+                clean.TrimEnd().EndsWith("%");
+            if (videoProgress)
+            {
+                int space = clean.TrimEnd().LastIndexOf(' ');
+                int percent;
+                if (space >= 0 && int.TryParse(
+                        clean.TrimEnd().Substring(space + 1).TrimEnd('%'), out percent))
+                {
+                    percent = Math.Max(0, Math.Min(100, percent));
+                    bar.Style = ProgressBarStyle.Blocks;
+                    bar.Minimum = 0;
+                    bar.Maximum = 100;
+                    bar.Value = percent;
+                    SetStatus("轉換影片中... " + percent + "%");
+                }
+                return;
+            }
             EnqueueLog(clean);
 
             if (clean.StartsWith("[stage]"))
@@ -1606,8 +1651,13 @@ namespace AIMusicGenerator
                     if (code == 0) batchCompleted++; else batchErrors++;
                     if (code == 0 && lastOutputFile.Length > 0)
                     {
-                        TryTagOutput(lastOutputFile);
-                        QueueAutoVideo(lastOutputFile);
+                        if (sdEnabled && sdModel.Length > 0)
+                            batchOutputs.Add(lastOutputFile);
+                        else
+                        {
+                            TryTagOutput(lastOutputFile);
+                            QueueAutoVideo(lastOutputFile);
+                        }
                     }
                     exitCode = code;
                     exitOk = code == 0;
@@ -1638,6 +1688,22 @@ namespace AIMusicGenerator
                     bar.Style = ProgressBarStyle.Blocks;
                     bar.Value = 0;
                     SetBusy(false);
+                    if (sdEnabled && sdModel.Length > 0 && batchOutputs.Count > 0)
+                    {
+                        AppendLog("=== 批次完成，開始產生 SD 封面 ===");
+                        Process oldDaemon = daemon;
+                        if (oldDaemon != null)
+                        {
+                            KillDaemon();
+                            try { oldDaemon.WaitForExit(5000); } catch (Exception) { }
+                        }
+                        List<string> coverFiles = new List<string>(batchOutputs);
+                        batchOutputs.Clear();
+                        StartAlbumCover(coverFiles, batchPrompt);
+                        SetStatus("批次完成，正在產生 SD 封面...");
+                        RefreshHistory();
+                        return;
+                    }
                     SetStatus("批次完成 " + batchCompleted + "/" + batchTotal +
                               (batchErrors > 0 ? "，失敗 " + batchErrors : ""));
                     AppendLog("=== 批次完成：成功 " + batchCompleted + "，失敗 " + batchErrors + " ===");

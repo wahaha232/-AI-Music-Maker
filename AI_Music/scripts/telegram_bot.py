@@ -277,7 +277,8 @@ def run_job(token: str, chat_id: int, prompt: str) -> None:
     try:
         with open(log_path, "w", encoding="utf-8") as log_handle:
             process = subprocess.Popen(
-                [sys.executable, "-u", str(BACKEND), "--config", str(config_path)],
+                [sys.executable, "-u", str(BACKEND), "--config", str(config_path),
+                 "--gpu-wait", "20"],
                 stdout=log_handle, stderr=subprocess.STDOUT,
             )
             current["process"] = process
@@ -353,7 +354,8 @@ def run_album_job(token: str, chat_id: int, title: str, prompts: list[str]) -> N
     try:
         with open(log_path, "w", encoding="utf-8") as log_handle:
             process = subprocess.Popen(
-                [sys.executable, "-u", str(BACKEND), "--album", str(config_path)],
+                [sys.executable, "-u", str(BACKEND), "--album", str(config_path),
+                 "--gpu-wait", "20"],
                 stdout=log_handle, stderr=subprocess.STDOUT,
             )
             current["process"] = process

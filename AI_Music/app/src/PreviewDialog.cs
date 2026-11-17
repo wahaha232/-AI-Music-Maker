@@ -9,7 +9,7 @@ namespace AIMusicGenerator
 {
     internal sealed class PreviewDialog : Form
     {
-        private readonly AudioFileReader reader;
+        private readonly WaveStream reader;
         private readonly WaveOutEvent output = new WaveOutEvent();
         private readonly PictureBox picture = new PictureBox();
         private readonly Label lblTitle = new Label();
@@ -132,7 +132,7 @@ namespace AIMusicGenerator
 
             try
             {
-                reader = new AudioFileReader(audioPath);
+                reader = AudioTools.OpenReader(audioPath);
                 output.Init(reader);
                 timer.Interval = 200;
                 timer.Tick += OnTimer;

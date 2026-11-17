@@ -35,10 +35,12 @@ namespace AIMusicGenerator
         private readonly ModernButton btnNormalize = new ModernButton();
         private readonly ModernButton btnPreview = new ModernButton();
         private readonly ModernButton btnRefresh = new ModernButton();
+        private readonly ModernButton btnSort = new ModernButton();
         private readonly ModernButton btnClose = new ModernButton();
         private readonly TextBox txtLog = new TextBox();
         private readonly Label lblStatus = new Label();
         private bool busy;
+        private bool sortAscending;
 
         public MediaToolsDialog(string outputDir, Action onChanged)
         {
@@ -73,7 +75,17 @@ namespace AIMusicGenerator
             btnRefresh.IconSize = Dpi.S(15);
             btnRefresh.Width = btnRefresh.GetPreferredSize(Size.Empty).Width;
             btnRefresh.Click += delegate { RefreshFiles(); };
-            UiBuild.AddHeaderTools(filesCard, btnRefresh);
+            UiBuild.Button(btnSort, "新→舊", "list-music", ButtonKind.Secondary);
+            btnSort.Height = Dpi.S(30);
+            btnSort.IconSize = Dpi.S(15);
+            btnSort.Width = btnSort.GetPreferredSize(Size.Empty).Width;
+            btnSort.Click += delegate
+            {
+                sortAscending = !sortAscending;
+                btnSort.Text = sortAscending ? "舊→新" : "新→舊";
+                RefreshFiles();
+            };
+            UiBuild.AddHeaderTools(filesCard, btnSort, btnRefresh);
             body.Controls.Add(filesCard, 0, 0);
 
             // right: actions
@@ -194,6 +206,7 @@ namespace AIMusicGenerator
                     {
                         return b.LastWriteTime.CompareTo(a.LastWriteTime);
                     });
+                    if (sortAscending) files.Reverse();
                     foreach (FileInfo file in files)
                         lstFiles.Items.Add(new FileItem(file.FullName));
                 }
@@ -362,6 +375,7 @@ namespace AIMusicGenerator
             btnNormalize.Enabled = !value;
             btnPreview.Enabled = !value;
             btnRefresh.Enabled = !value;
+            btnSort.Enabled = !value;
         }
 
         private static string UniqueOutput(string path)

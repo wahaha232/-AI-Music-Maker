@@ -442,6 +442,7 @@ namespace AIMusicGenerator
             DrawMode = DrawMode.OwnerDrawFixed;
             ItemHeight = Dpi.S(26);
             Font = ThemeManager.UiFont;
+            DoubleBuffered = true;
         }
 
         protected override void OnDrawItem(DrawItemEventArgs e)
