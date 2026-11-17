@@ -11,6 +11,8 @@ sys.path.insert(0, str(BASE / "app"))
 
 import generate_backend as backend  # noqa: E402
 
+backend._stdio()
+
 
 class NormalizeConfigTests(unittest.TestCase):
     def setUp(self):
