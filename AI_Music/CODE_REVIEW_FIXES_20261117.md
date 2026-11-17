@@ -232,6 +232,7 @@ Commit：`dd23584`、`d256b02`
 - 修正：`SelectModel` timeout 60s→300s；`GenerateCover` 300s→900s；SD 失敗時 `SdCoverClient.Stop()`；狀態列顯示 SD 失敗原因；新增 `--gpu-lease-test`。
 - 第三次 `--ui-test-single`：**exit 0**，產出 `ace_20261117_220745_seed2479470960.cover.png` 411,045 bytes；MP3 573,439 bytes；測試結束後 GPU lock 可重新取得，SD 程序已停止。
 - 因為 `--ui-test-single` 在 cover 完成後立即關閉，該次沒有等到自動影片完成；正常 App 保持開啟時會照常轉 MP4。
+- 以該 SD 封面 MP3 手動執行 `music_to_video.py`：成功產出 416,966 bytes MP4，封面來源為 `ace_...cover.png`。
 
 ### 驗證
 
