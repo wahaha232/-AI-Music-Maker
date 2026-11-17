@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import subprocess
 import sys
 import tempfile
@@ -41,7 +42,7 @@ OUT_DIR = BASE / "generated" / "telegram"
 LOG = Path(os.environ.get("TEMP", tempfile.gettempdir())) / "AIMusicGenerator" / "telegram.log"
 
 TOKEN = ""
-busy = threading.Lock()
+job_queue: queue.Queue = queue.Queue()
 current = {"running": False, "prompt": "", "started": 0.0, "process": None, "cancel": False}
 recent: list[str] = []
 recent_lock = threading.Lock()
@@ -239,8 +240,19 @@ def make_video(path: Path, duration: int) -> Path | None:
     return None
 
 
-def run_job(token: str, chat_id: int, prompt: str) -> None:
-    job_settings = dict(settings)
+def worker_loop() -> None:
+    while True:
+        job = job_queue.get()
+        try:
+            job()
+        except Exception as exc:
+            log(f"queued job failed: {exc}")
+        finally:
+            job_queue.task_done()
+
+
+def run_job(token: str, chat_id: int, prompt: str, job_settings: dict | None = None) -> None:
+    job_settings = dict(settings) if job_settings is None else dict(job_settings)
     duration = job_settings["duration"]
     current.update(running=True, prompt=prompt, started=time.time(),
                    process=None, cancel=False)
@@ -332,8 +344,10 @@ def run_job(token: str, chat_id: int, prompt: str) -> None:
         current.update(running=False, prompt="", started=0.0, process=None, cancel=False)
 
 
-def run_album_job(token: str, chat_id: int, title: str, prompts: list[str]) -> None:
-    duration = settings["duration"]
+def run_album_job(token: str, chat_id: int, title: str, prompts: list[str],
+                  job_settings: dict | None = None) -> None:
+    job_settings = dict(settings) if job_settings is None else dict(job_settings)
+    duration = job_settings["duration"]
     current.update(running=True, prompt="album: " + title, started=time.time(),
                    process=None, cancel=False)
     job_id = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -436,6 +450,7 @@ def status_text() -> str:
     lines.append(f"長度：{format_duration(settings['duration'])}")
     lines.append(f"自動轉影片：{'開' if settings['video'] else '關'}")
     lines.append(f"淡入/淡出：{settings['fade_in']:.1f}s / {settings['fade_out']:.1f}s")
+    lines.append(f"佇列：{job_queue.qsize()} 件")
     with recent_lock:
         lines.append(f"近期檔案：{len(recent)} 個")
     return "\n".join(lines)
@@ -450,6 +465,7 @@ def main() -> int:
         raise SystemExit("telegram.json needs bot_token and chat_id")
     global TOKEN
     TOKEN = token
+    threading.Thread(target=worker_loop, daemon=True).start()
     log("bot started")
     offset = 0
     while True:
@@ -473,16 +489,10 @@ def main() -> int:
                     if not prompt:
                         send(token, chat_id, "用法：/gen <音樂描述>")
                         continue
-                    if not busy.acquire(blocking=False):
-                        send(token, chat_id, "已有工作執行中，請等待或使用 /cancel。")
-                        continue
-
-                    def start_job():
-                        try:
-                            run_job(token, chat_id, prompt)
-                        finally:
-                            busy.release()
-                    threading.Thread(target=start_job, daemon=True).start()
+                    snapshot = dict(settings)
+                    position = job_queue.qsize() + 1
+                    job_queue.put(lambda p=prompt, s=snapshot: run_job(token, chat_id, p, s))
+                    send(token, chat_id, f"已排入佇列 #{position}。")
                 elif text.startswith("/album "):
                     payload = text[7:].strip()
                     if "|" not in payload:
@@ -493,25 +503,28 @@ def main() -> int:
                     if not title.strip() or not prompts:
                         send(token, chat_id, "專輯名稱或提示詞不可空白。")
                         continue
-                    if not busy.acquire(blocking=False):
-                        send(token, chat_id, "已有工作執行中，請等待或使用 /cancel。")
-                        continue
-
-                    def start_album_job():
-                        try:
-                            run_album_job(token, chat_id, title.strip(), prompts)
-                        finally:
-                            busy.release()
-                    threading.Thread(target=start_album_job, daemon=True).start()
+                    snapshot = dict(settings)
+                    position = job_queue.qsize() + 1
+                    job_queue.put(lambda t=title.strip(), p=prompts, s=snapshot:
+                                  run_album_job(token, chat_id, t, p, s))
+                    send(token, chat_id, f"專輯已排入佇列 #{position}。")
                 elif text == "/status":
                     send(token, chat_id, status_text())
                 elif text == "/cancel":
-                    if not current["running"]:
+                    if not current["running"] and job_queue.empty():
                         send(token, chat_id, "目前沒有執行中的工作。")
                         continue
                     current["cancel"] = True
                     kill_process(current.get("process"))
-                    send(token, chat_id, "已送出取消指令。")
+                    cleared = 0
+                    while True:
+                        try:
+                            job_queue.get_nowait()
+                            job_queue.task_done()
+                            cleared += 1
+                        except queue.Empty:
+                            break
+                    send(token, chat_id, f"已取消目前工作，並清除 {cleared} 件佇列。")
                 elif text.startswith("/duration"):
                     parts = text.split(maxsplit=1)
                     if len(parts) == 1:
@@ -561,16 +574,9 @@ def main() -> int:
                         except ValueError:
                             count = 2
                     count = max(2, min(10, count))
-                    if not busy.acquire(blocking=False):
-                        send(token, chat_id, "已有工作執行中，請稍後再合併。")
-                        continue
-
-                    def start_merge():
-                        try:
-                            merge_recent(token, chat_id, count)
-                        finally:
-                            busy.release()
-                    threading.Thread(target=start_merge, daemon=True).start()
+                    position = job_queue.qsize() + 1
+                    job_queue.put(lambda c=count: merge_recent(token, chat_id, c))
+                    send(token, chat_id, f"合併已排入佇列 #{position}。")
                 elif text == "/outputs":
                     with recent_lock:
                         items = list(recent[-5:])

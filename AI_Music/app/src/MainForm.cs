@@ -1184,6 +1184,84 @@ namespace AIMusicGenerator
             worker.Start();
         }
 
+        private void StartBatchCovers(List<string> targets, string prompt)
+        {
+            if (targets == null || targets.Count == 0) return;
+            Thread worker = new Thread(delegate()
+            {
+                GpuLease lease = null;
+                try
+                {
+                    string leaseError;
+                    lease = GpuLease.Acquire("sd-batch", 30, out leaseError);
+                    if (lease == null)
+                        throw new InvalidOperationException("GPU 使用中: " + leaseError);
+                    if (!SdCoverClient.EnsureApi(sdUrl, sdPath, delegate(string message)
+                    {
+                        AppendLog(message);
+                    }))
+                        throw new InvalidOperationException("SD API unavailable");
+                    if (sdModel.Length > 0) SdCoverClient.SelectModel(sdUrl, sdModel);
+
+                    int total = targets.Count;
+                    for (int index = 0; index < targets.Count; index++)
+                    {
+                        string target = targets[index];
+                        string cover = Path.ChangeExtension(target, ".cover.png");
+                        bool hasCover = false;
+                        try
+                        {
+                            string coverPrompt = BuildCoverPrompt(target);
+                            SdCoverClient.GenerateCover(sdUrl, coverPrompt,
+                                "text, watermark, logo, letters, blurry, low quality, deformed",
+                                sdSize, sdSize, sdSteps, cover);
+                            hasCover = File.Exists(cover);
+                        }
+                        catch (Exception ex)
+                        {
+                            AppendLog("批次 SD 封面失敗: " + Path.GetFileName(target) +
+                                      " - " + ex.Message);
+                        }
+                        string file = target;
+                        string image = hasCover ? cover : null;
+                        int position = index + 1;
+                        PostUi(delegate()
+                        {
+                            TryTagOutput(file, image);
+                            QueueAutoVideo(file);
+                            SetStatus("批次 SD 封面 " + position + "/" + total);
+                        });
+                    }
+                    try { SdCoverClient.UnloadCheckpoint(sdUrl); } catch (Exception) { }
+                    PostUi(delegate()
+                    {
+                        SetStatus("批次 SD 封面完成 (" + total + " 首)");
+                        RefreshHistory();
+                    });
+                }
+                catch (Exception ex)
+                {
+                    AppendLog("批次 SD 封面失敗，使用預設封面: " + ex.Message);
+                    foreach (string target in targets)
+                    {
+                        string file = target;
+                        PostUi(delegate()
+                        {
+                            TryTagOutput(file);
+                            QueueAutoVideo(file);
+                        });
+                    }
+                }
+                finally
+                {
+                    try { SdCoverClient.Stop(); } catch (Exception) { }
+                    if (lease != null) lease.Dispose();
+                }
+            });
+            worker.IsBackground = true;
+            worker.Start();
+        }
+
         private void OnMediaTools(object sender, EventArgs e)
         {
             string dir = txtOutDir.Text.Trim();
@@ -1756,7 +1834,7 @@ namespace AIMusicGenerator
                         }
                         List<string> coverFiles = new List<string>(batchOutputs);
                         batchOutputs.Clear();
-                        StartAlbumCover(coverFiles, batchPrompt);
+                        StartBatchCovers(coverFiles, batchPrompt);
                         SetStatus("批次完成，正在產生 SD 封面...");
                         RefreshHistory();
                         return;

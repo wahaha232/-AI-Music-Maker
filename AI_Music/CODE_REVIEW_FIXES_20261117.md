@@ -240,3 +240,20 @@ Commit：`dd23584`、`d256b02`
 - `--gpu-lease-test`：`locked`，exit 0。
 - SD 封面、GpuLease、ACE daemon 釋放流程已實機通過。
 - 尚未大規模測試 Telegram 併發與 5 分鐘閒置卸載。
+
+## 第 7 批（2026-11-17）
+
+分支：`fix/review-batch7`
+Commit：提交後填入
+
+| 項目 | 修改檔案 | 狀態 | 驗證證據 |
+|---|---|---|---|
+| Telegram 工作佇列 | `telegram_bot.py` | 程式完成；實機佇列未驗證 | 單一 worker、`queue.Queue`；`/status` 顯示佇列數；`/cancel` 清空佇列；`/gen`／`/album`／`/merge` 都排隊 |
+| 批次每首獨立 SD 封面 | `MainForm.cs` | 程式完成；實機未驗證 | 新增 `StartBatchCovers`，逐首產生 `<歌名>.cover.png`、寫標籤、排入影片；SD 只啟動一次 |
+| 建置 | - | 通過 | `build.ps1`：15 tests OK；`--ui-selftest` 通過 |
+
+### 尚未處理
+
+- 長曲分段生成＋交叉淡化仍在規劃／未實作。
+- 自動 metadata＋YouTube 私人上傳：尚未實作；YouTube 需要 Google Cloud OAuth client。
+- SD／ACE 連續與併發實機測試未完成。
