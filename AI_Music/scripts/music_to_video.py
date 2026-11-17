@@ -264,6 +264,30 @@ def render(
     return code
 
 
+def write_youtube_metadata(output: Path, audio: Path) -> None:
+    sidecar = audio.with_suffix(".json")
+    caption = audio.stem
+    try:
+        data = json.loads(sidecar.read_text(encoding="utf-8-sig"))
+        caption = str((data.get("config") or {}).get("caption") or caption)
+    except (OSError, ValueError):
+        pass
+    title = caption.strip()[:90] or output.stem
+    words = [word.strip(",.;:()[]") for word in caption.split()]
+    tags = [word for word in words if 2 <= len(word) <= 20][:12]
+    tags += ["AI music", "instrumental", "background music"]
+    metadata = {
+        "title": title,
+        "description": caption.strip() + "\n\nAI-generated music / video.",
+        "tags": tags,
+        "categoryId": "10",
+        "privacyStatus": "private",
+        "madeForKids": False,
+    }
+    output.with_suffix(".youtube.json").write_text(
+        json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def collect_audio(args: argparse.Namespace) -> list[Path]:
     files: list[Path] = []
     if args.input_dir is not None:
@@ -361,6 +385,7 @@ def main() -> int:
             if wave_dir is not None:
                 wave_dir.cleanup()
         if code == 0 and output.is_file():
+            write_youtube_metadata(output, audio)
             size_mb = output.stat().st_size / (1024 * 1024)
             print(f"[done] {output} ({size_mb:.1f} MB)", flush=True)
             rendered += 1

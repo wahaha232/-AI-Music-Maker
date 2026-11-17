@@ -257,3 +257,30 @@ Commit：`dcccd39`
 - 長曲分段生成＋交叉淡化仍在規劃／未實作。
 - 自動 metadata＋YouTube 私人上傳：尚未實作；YouTube 需要 Google Cloud OAuth client。
 - SD／ACE 連續與併發實機測試未完成。
+
+## 第 8 批（長曲、metadata、YouTube 準備）
+
+分支：`fix/review-batch8`
+Commit：提交後填入
+
+| 項目 | 修改檔案 | 狀態 | 驗證證據 |
+|---|---|---|---|
+| 長曲分段＋交叉淡化 CLI | `scripts/longform_generate.py` | 規劃與合併通過；完整生成未驗證 | 60 秒／3 段 dry-run 通過；3 個 10 秒 MP3 以 2 秒 crossfade 合併輸出 20.00 秒 |
+| 自動 metadata | `scripts/music_to_video.py` | 通過 | 影片完成後自動產生 `.youtube.json`（title／description／tags／private） |
+| YouTube 私人上傳 | `scripts/youtube_upload.py` | 程式完成；未驗證 | `--dry-run` 通過；需要 `%APPDATA%\AIMusicGenerator\youtube_client.json` 與 `--auth` 才能實際上傳 |
+| Telegram 佇列 | `telegram_bot.py` | 程式完成；實機未驗證 | 單一 worker、佇列數、`/cancel` 清空佇列 |
+| 批次每首 SD 封面 | `MainForm.cs` | 程式完成；實機未驗證 | `StartBatchCovers` 逐首產生與排入影片 |
+
+### 長曲流程
+
+1. `longform_generate.py` 讀 base config，依 target/chunk/crossfade 計算段數。
+2. 建立 album JSON，第一段加 intro、中間段加 seamless continuation、最後段加 outro。
+3. 呼叫 `generate_backend.py --album`，模型只載入一次。
+4. 用 ffmpeg `acrossfade` 串接、loudnorm、fade、裁到目標長度。
+5. 輸出 MP3 與 `.youtube.json`。
+
+### 限制
+
+- 長曲尚未接入 App UI／Telegram 指令，目前是 CLI。
+- YouTube 尚未提供 OAuth client，無法做私人上傳實機測試。
+- 分段接縫仍可能出現和聲／節奏漂移；需 30 分鐘實聽驗證。
