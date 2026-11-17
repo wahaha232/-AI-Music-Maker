@@ -107,7 +107,7 @@ Commit：`f8cbcf0`
 ## 第 3 批（2026-11-17）
 
 分支：`fix/review-batch3`
-Commit：提交後填入
+Commit：`be0ca57`（主要）、`8541887`（N7 backend 測試）
 
 | 項目 | 修改檔案 | 狀態 | 驗證證據 |
 |---|---|---|---|
