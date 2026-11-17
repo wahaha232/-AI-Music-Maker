@@ -32,6 +32,7 @@ WORKSPACE = BASE_DIR.parent                    # ...\AIMUSIC
 REPO_DIR = BASE_DIR / "ACE-Step-1.5"
 MODELS_DIR = BASE_DIR / "models" / "Ace-Step1.5"
 DEFAULT_OUT = BASE_DIR / "generated"
+AUDIO_OUTPUT_SUFFIXES = {".mp3", ".wav", ".flac", ".opus", ".aac", ".m4a"}
 
 DEFAULTS = {
     "caption": "Warm lo-fi chill instrumental with mellow Rhodes piano, soft hip-hop drums, "
@@ -281,6 +282,8 @@ def run_job(dit, llm, cfg: dict) -> tuple[int, Path | None]:
     import soundfile as sf
     from acestep.inference import GenerationConfig, GenerationParams, generate_music
 
+    if cfg["thinking"] and cfg["duration"] > 480:
+        _emit("warn", f"thinking_duration_over_lm duration={cfg['duration']} limit=480")
     out_dir = Path(cfg["output_dir"])
     run_dir = Path(tempfile.mkdtemp(prefix=".tmp_run_", dir=str(out_dir)))
     try:
@@ -343,8 +346,16 @@ def run_job(dit, llm, cfg: dict) -> tuple[int, Path | None]:
             if candidate and Path(candidate).is_file():
                 produced = Path(candidate)
         if produced is None:
-            wavs = sorted(run_dir.glob("*"), key=lambda p: p.stat().st_mtime, reverse=True)
-            produced = next((p for p in wavs if p.is_file()), None)
+            candidates = [p for p in run_dir.glob("*")
+                          if p.is_file() and p.suffix.lower() in AUDIO_OUTPUT_SUFFIXES]
+            candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+            for candidate in candidates:
+                try:
+                    sf.info(str(candidate))
+                    produced = candidate
+                    break
+                except Exception:
+                    continue
         if produced is None:
             _emit("error", "模型回報成功，但找不到輸出音檔")
             return 1, None
@@ -397,11 +408,13 @@ def run_job(dit, llm, cfg: dict) -> tuple[int, Path | None]:
             "rms": round(rms, 5),
         }
         sidecar = target.with_suffix(".json")
-        sidecar.write_text(json.dumps(
+        temporary = sidecar.with_suffix(sidecar.suffix + ".tmp")
+        temporary.write_text(json.dumps(
             {"created": datetime.now().isoformat(timespec="seconds"),
              "config": cfg, "actual_seed": actual_seed, "audio": info,
              "generate_seconds": round(elapsed, 1)},
             indent=2, ensure_ascii=False, default=str), encoding="utf-8")
+        os.replace(str(temporary), str(sidecar))
 
         _emit("audio", f"{info['duration_sec']}s {info['sample_rate']}Hz "
                        f"{info['channels']}ch {info['size_mb']}MB peak={info['peak']}")
@@ -443,6 +456,9 @@ def run_oneshot(cfg: dict, gpu_wait: float = 0.0) -> int:
         return code
     finally:
         release_models(dit, llm)
+        dit = None
+        llm = None
+        release_models(dit, llm)
         lock.release()
 
 
@@ -478,6 +494,9 @@ def run_daemon(offload_mode: str = "auto", gpu_wait: float = 0.0) -> int:
         traceback.print_exc()
         return 1
     finally:
+        release_models(dit, llm)
+        dit = None
+        llm = None
         release_models(dit, llm)
         lock.release()
 
@@ -552,6 +571,9 @@ def run_album(album_path: Path, gpu_wait: float = 0.0) -> int:
         _emit("albumdone", str(album_json))
         if dit is not None or llm is not None:
             release_models(dit, llm)
+        dit = None
+        llm = None
+        release_models(dit, llm)
         lock.release()
     return 0 if len(files) == len(tracks) else 1
 

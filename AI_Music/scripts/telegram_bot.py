@@ -202,9 +202,9 @@ def kill_process(process) -> None:
         log(f"kill failed: {exc}")
 
 
-def apply_fade(path: Path, out_dir: Path) -> Path:
-    fade_in = settings["fade_in"]
-    fade_out = settings["fade_out"]
+def apply_fade(path: Path, out_dir: Path, job_settings: dict) -> Path:
+    fade_in = job_settings["fade_in"]
+    fade_out = job_settings["fade_out"]
     if fade_in <= 0 and fade_out <= 0:
         return path
     output = out_dir / f"{path.stem}_fade{path.suffix}"
@@ -240,7 +240,8 @@ def make_video(path: Path, duration: int) -> Path | None:
 
 
 def run_job(token: str, chat_id: int, prompt: str) -> None:
-    duration = settings["duration"]
+    job_settings = dict(settings)
+    duration = job_settings["duration"]
     current.update(running=True, prompt=prompt, started=time.time(),
                    process=None, cancel=False)
     job_id = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -267,10 +268,10 @@ def run_job(token: str, chat_id: int, prompt: str) -> None:
     config_path = out_dir / "config.json"
     config_path.write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
     extras = []
-    if settings["video"]:
+    if job_settings["video"]:
         extras.append("自動轉影片")
-    if settings["fade_in"] > 0 or settings["fade_out"] > 0:
-        extras.append(f"淡入 {settings['fade_in']:.1f}s / 淡出 {settings['fade_out']:.1f}s")
+    if job_settings["fade_in"] > 0 or job_settings["fade_out"] > 0:
+        extras.append(f"淡入 {job_settings['fade_in']:.1f}s / 淡出 {job_settings['fade_out']:.1f}s")
     suffix = "（" + "、".join(extras) + "）" if extras else ""
     send(token, chat_id, f"開始生成 {format_duration(duration)} MP3{suffix}…\n{prompt[:200]}")
     log_path = out_dir / "run.log"
@@ -305,9 +306,9 @@ def run_job(token: str, chat_id: int, prompt: str) -> None:
         if code != 0 or not produced or not Path(produced).is_file():
             send(token, chat_id, f"生成失敗（exit {code}），請查看日誌。")
             return
-        audio = apply_fade(Path(produced), out_dir)
+        audio = apply_fade(Path(produced), out_dir, job_settings)
         add_recent(audio)
-        if settings["video"]:
+        if job_settings["video"]:
             video = make_video(audio, duration)
             if video is not None:
                 if send_video(token, chat_id, video,

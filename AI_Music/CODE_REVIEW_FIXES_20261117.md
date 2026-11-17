@@ -139,3 +139,35 @@ Commit：`be0ca57`（主要）、`8541887`（N7 backend 測試）
 - N5 App 閒置自動卸載模型未實作（本批明令不做）。
 - SD WebUI 仍未取得 `gpu_lock`；目前只在啟動 SD／Telegram 前釋放 ACE-Step daemon。
 - 批次 SD 封面與 Telegram 切換釋放模型已在前一個 commit `1335653` 完成，不属于本批。
+
+## 第 4 批（2026-11-17）
+
+分支：`fix/review-batch4`
+Commit：提交後填入
+
+| 項目 | 修改檔案 | 狀態 | 驗證證據 |
+|---|---|---|---|
+| P0-01 SD GPU 鎖 | `scripts/gpu_lock_hold.py`、`src/GpuLease.cs`、`Paths.cs`、`MainForm.cs` | 程式完成；SD 實機未驗證 | GPU lease helper 實測：持鎖時 `GpuBusy`、送 `quit` 後可再取得；build 通過 |
+| P1-01 Daemon 閒置卸載 | `MainForm.cs` | 程式完成；5 分鐘實機未驗證 | 閒置 timer、Telegram/SD 前釋放；build 通過 |
+| P1-02 模型參照釋放 | `generate_backend.py` | 程式完成；VRAM 實機未驗證 | `release_models` 後再清空 dit／llm 並再次 empty_cache；13 tests OK |
+| P1-03 長時長共用警告 | `generate_backend.py`、`MainForm.cs` | 部分完成（僅結構化警告） | 新增 `[warn] thinking_duration_over_lm ...`；未拒絕高風險設定 |
+| P1-04 SD 埠與啟動互斥 | `SdCoverClient.cs` | 程式完成；實機未驗證 | 由 URL 解析 Port；`EnsureApi` 加入 StartGate；build 通過 |
+| P1-05 fallback／Sidecar | `generate_backend.py` | 程式完成；故障注入未驗證 | fallback 只接受音訊副檔名並以 `sf.info` 驗證；sidecar 先寫 `.tmp` 再 `os.replace` |
+| P1-07 Telegram 設定快照 | `telegram_bot.py` | 程式完成；實機未驗證 | `run_job` 建立 `job_settings`；fade／video 只讀快照 |
+
+### 驗證
+
+- `python -m py_compile`：`generate_backend.py`、`gpu_lock.py`、`gpu_lock_hold.py`、`telegram_bot.py` 通過。
+- `build.ps1`：編譯＋selftest＋13 tests OK。
+- `--ui-selftest`：通過。
+- `GpuLease` helper 實測：`[locked]` → 另一個 acquire 得到 `GpuBusy` → 送 `quit` 後可重新取得。
+- SD 封面與 ACE-Step 不重疊的完整 OOM 實機驗證：**未驗證**。
+- Daemon 閒置 5 分鐘卸載：**未驗證**。
+
+### 範圍外（未修）
+
+- P1-06 統一 ProcessSupervisor 未實作。
+- P2-01 鎖例外分類（檔案系統錯誤仍可能被當成 GpuBusy）未修。
+- P2-02 協作式鎖仍不涵蓋外部 GPU 程式；文件未新增 UI 說明。
+- P2-03 舊審查段落仍有過時狀態。
+- P2-04 相依套件未產生完整 lock 檔。

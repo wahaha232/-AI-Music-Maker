@@ -13,6 +13,7 @@ namespace AIMusicGenerator
     internal static class SdCoverClient
     {
         private static readonly JavaScriptSerializer Serializer = new JavaScriptSerializer();
+        private static readonly object StartGate = new object();
         private static Process serverProcess;
 
         static SdCoverClient()
@@ -23,6 +24,8 @@ namespace AIMusicGenerator
 
         public static bool EnsureApi(string url, string installPath, Action<string> log)
         {
+            lock (StartGate)
+            {
             if (IsReady(url)) return true;
             string python = Path.Combine(installPath, "venv", "Scripts", "python.exe");
             string launch = Path.Combine(installPath, "launch.py");
@@ -34,8 +37,12 @@ namespace AIMusicGenerator
             try
             {
                 if (log != null) log("啟動 Stable Diffusion WebUI API...");
+                int port = 7860;
+                Uri parsed;
+                if (Uri.TryCreate(url, UriKind.Absolute, out parsed) && !parsed.IsDefaultPort)
+                    port = parsed.Port;
                 ProcessStartInfo psi = new ProcessStartInfo(python);
-                psi.Arguments = "\"" + launch + "\" --api --nowebui --lowvram --disable-extra-extensions --port 7860";
+                psi.Arguments = "\"" + launch + "\" --api --nowebui --lowvram --disable-extra-extensions --port " + port;
                 psi.WorkingDirectory = installPath;
                 psi.UseShellExecute = false;
                 psi.CreateNoWindow = true;
@@ -65,6 +72,7 @@ namespace AIMusicGenerator
             }
             if (log != null) log("SD API 啟動逾時");
             return false;
+            }
         }
 
         public static bool IsReady(string url)

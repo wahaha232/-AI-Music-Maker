@@ -53,6 +53,11 @@ namespace AIMusicGenerator
             get { return Path.Combine(Workspace, "AI_Music", "scripts", "audio_edit.py"); }
         }
 
+        public static string GpuHoldTool
+        {
+            get { return Path.Combine(Workspace, "AI_Music", "scripts", "gpu_lock_hold.py"); }
+        }
+
         public static string FfmpegExe
         {
             get { return Path.Combine(Workspace, "AI_Music", "tools", "ffmpeg", "bin", "ffmpeg.exe"); }
@@ -135,6 +140,13 @@ namespace AIMusicGenerator
             string arguments = "-u " + Quote(VideoTool) + " " + Quote(audioPath);
             if (!string.IsNullOrEmpty(imagePath)) arguments += " --image " + Quote(imagePath);
             return CreatePythonStartInfo(arguments, false);
+        }
+
+        public static ProcessStartInfo BuildGpuHoldStartInfo(string source, int waitSeconds)
+        {
+            return CreatePythonStartInfo(
+                "-u " + Quote(GpuHoldTool) + " " + Quote(source) + " " +
+                waitSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture), true);
         }
 
         public static ProcessStartInfo BuildAudioFadeStartInfo(string inputPath,

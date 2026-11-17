@@ -88,6 +88,8 @@ namespace AIMusicGenerator
         private readonly WinTimer finishTimer = new WinTimer();
         private readonly WinTimer logTimer = new WinTimer();
         private readonly WinTimer elapsedTimer = new WinTimer();
+        private readonly WinTimer daemonIdleTimer = new WinTimer();
+        private DateTime lastJobActivity = DateTime.Now;
         private readonly JavaScriptSerializer serializer = new JavaScriptSerializer();
         private readonly Queue<string> logQueue = new Queue<string>();
         private readonly object logGate = new object();
@@ -153,6 +155,9 @@ namespace AIMusicGenerator
             logTimer.Start();
             elapsedTimer.Interval = 1000;
             elapsedTimer.Tick += OnElapsedTimer;
+            daemonIdleTimer.Interval = 5 * 60 * 1000;
+            daemonIdleTimer.Tick += OnDaemonIdle;
+            daemonIdleTimer.Start();
             playbackTimer.Interval = 200;
             playbackTimer.Tick += OnPlaybackTimer;
             CleanupTempConfigs();
@@ -607,8 +612,13 @@ namespace AIMusicGenerator
             Thread worker = new Thread(delegate()
             {
                 string cover = Path.ChangeExtension(target, ".cover.png");
+                GpuLease lease = null;
                 try
                 {
+                    string leaseError;
+                    lease = GpuLease.Acquire("sd", 30, out leaseError);
+                    if (lease == null)
+                        throw new InvalidOperationException("GPU 使用中: " + leaseError);
                     if (!SdCoverClient.EnsureApi(sdUrl, sdPath, delegate(string message)
                     {
                         AppendLog(message);
@@ -643,6 +653,10 @@ namespace AIMusicGenerator
                         }));
                     }
                     catch (InvalidOperationException) { }
+                }
+                finally
+                {
+                    if (lease != null) lease.Dispose();
                 }
             });
             worker.IsBackground = true;
@@ -1084,8 +1098,13 @@ namespace AIMusicGenerator
             {
                 string folder = Path.GetDirectoryName(targets[0]);
                 string cover = Path.Combine(folder, "album_cover.png");
+                GpuLease lease = null;
                 try
                 {
+                    string leaseError;
+                    lease = GpuLease.Acquire("sd", 30, out leaseError);
+                    if (lease == null)
+                        throw new InvalidOperationException("GPU 使用中: " + leaseError);
                     if (!SdCoverClient.EnsureApi(sdUrl, sdPath, delegate(string message)
                     {
                         AppendLog(message);
@@ -1129,6 +1148,10 @@ namespace AIMusicGenerator
                         }));
                     }
                     catch (InvalidOperationException) { }
+                }
+                finally
+                {
+                    if (lease != null) lease.Dispose();
                 }
             });
             worker.IsBackground = true;
@@ -1398,6 +1421,7 @@ namespace AIMusicGenerator
                 : BuildConfig(caption, seed);
 
             jobRunning = true;
+            lastJobActivity = DateTime.Now;
             jobStarted = DateTime.Now;
             elapsedTimer.Start();
             SetBusy(true);
@@ -1474,6 +1498,7 @@ namespace AIMusicGenerator
                 if (daemon == null || !daemonReady) return;
                 daemon.StandardInput.WriteLine(AsciiJson(serializer.Serialize(config)));
                 daemon.StandardInput.Flush();
+                lastJobActivity = DateTime.Now;
                 jobStarted = DateTime.Now;
                 bar.Style = ProgressBarStyle.Marquee;
                 AppendLog("=== 已送出生成指令（模型沿用中）===");
@@ -1530,6 +1555,24 @@ namespace AIMusicGenerator
             SetStatus("正在取消...");
             AppendLog("=== 已送出取消指令（模型將卸載，下次需重新載入）===");
             KillDaemon();
+        }
+
+        private void OnDaemonIdle(object sender, EventArgs e)
+        {
+            if (daemon == null || jobRunning) return;
+            if (albumProcess != null && !albumProcess.HasExited) return;
+            if ((DateTime.Now - lastJobActivity).TotalMinutes < 5) return;
+            AppendLog("=== 閒置 5 分鐘，卸載模型以釋放 GPU ===");
+            try
+            {
+                daemon.StandardInput.WriteLine("{\"command\":\"quit\"}");
+                daemon.StandardInput.Flush();
+                SetStatus("閒置卸載模型...");
+            }
+            catch (Exception)
+            {
+                KillDaemon();
+            }
         }
 
         private void KillDaemon()
@@ -1611,6 +1654,11 @@ namespace AIMusicGenerator
             {
                 HandleProgress(clean.Substring(10).Trim());
             }
+            else if (clean.StartsWith("[warn]"))
+            {
+                SetStatus("警告: " + clean.Substring(6).Trim());
+                AppendLog("=== 警告: " + clean.Substring(6).Trim() + " ===");
+            }
             else if (clean.StartsWith("[busy]"))
             {
                 string owner = clean.Substring(6).Trim();
@@ -1645,6 +1693,7 @@ namespace AIMusicGenerator
                 int code = 1;
                 int marker = clean.IndexOf("code=", StringComparison.Ordinal);
                 if (marker >= 0) int.TryParse(clean.Substring(marker + 5).Trim(), out code);
+                lastJobActivity = DateTime.Now;
 
                 if (batchActive && !cancelRequested)
                 {
@@ -2482,6 +2531,7 @@ namespace AIMusicGenerator
             DisposeAudio();
             finishTimer.Stop();
             logTimer.Stop();
+            daemonIdleTimer.Stop();
             elapsedTimer.Stop();
             SaveSettings();
             Process running = daemon;
