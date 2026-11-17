@@ -28,6 +28,10 @@ class GpuBusy(Exception):
     pass
 
 
+class GpuLockError(Exception):
+    pass
+
+
 def _process_alive(pid: int) -> bool:
     if pid <= 0:
         return False
@@ -108,25 +112,41 @@ def acquire(source: str, wait_seconds: float = 0.0) -> GpuLock:
             if os.fstat(fd).st_size == 0:
                 os.write(fd, b"0")
             os.lseek(fd, 0, os.SEEK_SET)
+        except OSError as exc:
+            if fd is not None:
+                try:
+                    os.close(fd)
+                except Exception:
+                    pass
+            raise GpuLockError(f"cannot open GPU lock {lock_file}: {exc}") from exc
+
+        try:
             if os.name == "nt":
                 import msvcrt
                 msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
             else:
                 import fcntl
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            lock = GpuLock(fd, source)
-            _owner_file().write_text(json.dumps({
+        except OSError as exc:
+            try:
+                os.close(fd)
+            except Exception:
+                pass
+            if time.time() >= deadline:
+                raise GpuBusy(owner_info()) from exc
+            time.sleep(0.25)
+            continue
+
+        lock = GpuLock(fd, source)
+        try:
+            owner = _owner_file()
+            temporary = owner.with_suffix(owner.suffix + ".tmp")
+            temporary.write_text(json.dumps({
                 "pid": os.getpid(),
                 "source": source,
                 "started": datetime.now().isoformat(timespec="seconds"),
             }, ensure_ascii=False), encoding="utf-8")
-            return lock
-        except Exception as exc:
-            if fd is not None:
-                try:
-                    os.close(fd)
-                except Exception:
-                    pass
-            if time.time() >= deadline:
-                raise GpuBusy(owner_info()) from exc
-            time.sleep(0.25)
+            os.replace(str(temporary), str(owner))
+        except OSError:
+            pass
+        return lock

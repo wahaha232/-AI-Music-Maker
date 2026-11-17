@@ -52,6 +52,12 @@ class NormalizeConfigTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self._config(duration=value)
 
+    def test_long_thinking_requires_opt_in(self):
+        with self.assertRaises(ValueError):
+            self._config(thinking=True, duration=481)
+        cfg = self._config(thinking=True, duration=481, allow_long_thinking=True)
+        self.assertEqual(cfg["duration"], 481.0)
+
     def test_caption_must_not_be_blank(self):
         for value in ("", "   "):
             with self.assertRaises(ValueError):

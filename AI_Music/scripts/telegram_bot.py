@@ -247,11 +247,12 @@ def run_job(token: str, chat_id: int, prompt: str) -> None:
     job_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_dir = OUT_DIR / job_id
     out_dir.mkdir(parents=True, exist_ok=True)
+    thinking = duration <= 480
     config = {
         "caption": prompt,
         "lyrics": "[Instrumental]",
         "instrumental": True,
-        "thinking": True,
+        "thinking": thinking,
         "bpm": None,
         "keyscale": "",
         "timesignature": "",
@@ -273,6 +274,8 @@ def run_job(token: str, chat_id: int, prompt: str) -> None:
     if job_settings["fade_in"] > 0 or job_settings["fade_out"] > 0:
         extras.append(f"淡入 {job_settings['fade_in']:.1f}s / 淡出 {job_settings['fade_out']:.1f}s")
     suffix = "（" + "、".join(extras) + "）" if extras else ""
+    if not thinking:
+        send(token, chat_id, "時長超過 480 秒，已自動關閉 LM 思考以降低 VRAM 風險。")
     send(token, chat_id, f"開始生成 {format_duration(duration)} MP3{suffix}…\n{prompt[:200]}")
     log_path = out_dir / "run.log"
     try:
@@ -340,7 +343,7 @@ def run_album_job(token: str, chat_id: int, title: str, prompts: list[str]) -> N
     for index, prompt in enumerate(prompts, 1):
         tracks.append({"title": f"Track {index:02d}", "prompt": prompt, "duration": duration})
     shared = {
-        "instrumental": True, "thinking": True, "bpm": None, "keyscale": "",
+        "instrumental": True, "thinking": duration <= 480, "bpm": None, "keyscale": "",
         "timesignature": "", "vocal_language": "unknown", "duration": duration,
         "inference_steps": 8, "guidance_scale": 1.0, "seed": -1,
         "output_dir": str(out_dir), "filename_prefix": "album",

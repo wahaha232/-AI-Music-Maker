@@ -24,7 +24,7 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
-from gpu_lock import GpuBusy, acquire
+from gpu_lock import GpuBusy, GpuLockError, acquire
 
 APP_DIR = Path(__file__).resolve().parent
 BASE_DIR = APP_DIR.parent                      # ...\AI_Music
@@ -80,6 +80,9 @@ def acquire_gpu(source: str, wait_seconds: float):
         _emit("busy", str(exc))
         _emit("error", "GPU 使用中")
         return None
+    except GpuLockError as exc:
+        _emit("error", f"GPU lock error: {exc}")
+        return None
 
 
 def bootstrap() -> None:
@@ -109,6 +112,11 @@ def normalize_config(data: dict) -> dict:
     duration = float(cfg["duration"])
     if not 10.0 <= duration <= 7200.0:
         raise ValueError("duration 必須介於 10 到 7200 秒")
+    allow_long_thinking = bool(cfg.get("allow_long_thinking", False))
+    if bool(cfg["thinking"]) and duration > 480.0 and not allow_long_thinking:
+        raise ValueError(
+            "thinking=True 時 duration 不可超過 480 秒；"
+            "請關閉 thinking 或設定 allow_long_thinking=true")
     raw_bpm = cfg.get("bpm")
     if raw_bpm in (None, "", "auto", "Auto"):
         bpm = None
@@ -162,6 +170,7 @@ def normalize_config(data: dict) -> dict:
     cfg["mp3_bitrate"] = mp3_bitrate
     cfg["mp3_sample_rate"] = mp3_sample_rate
     cfg["shift"] = shift
+    cfg["allow_long_thinking"] = allow_long_thinking
     cfg["seed"] = int(cfg.get("seed", -1))
     out = Path(str(cfg["output_dir"])).expanduser()
     if not out.is_absolute():

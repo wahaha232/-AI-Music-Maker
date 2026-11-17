@@ -9,7 +9,7 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BASE / "app"))
 
-from gpu_lock import GpuBusy, acquire  # noqa: E402
+from gpu_lock import GpuBusy, GpuLockError, acquire  # noqa: E402
 
 
 def main() -> int:
@@ -19,6 +19,9 @@ def main() -> int:
         lock = acquire(source, wait_seconds)
     except GpuBusy as exc:
         print(f"[busy] {exc}", flush=True)
+        return 75
+    except GpuLockError as exc:
+        print(f"[error] GPU lock error: {exc}", flush=True)
         return 75
     print(f"[locked] pid={os.getpid()} source={source}", flush=True)
     try:

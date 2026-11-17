@@ -171,3 +171,48 @@ Commit：`f3512ce`
 - P2-02 協作式鎖仍不涵蓋外部 GPU 程式；文件未新增 UI 說明。
 - P2-03 舊審查段落仍有過時狀態。
 - P2-04 相依套件未產生完整 lock 檔。
+
+## 第 5 批（2026-11-17）
+
+分支：`fix/review-batch5`
+Commit：提交後填入
+
+| 項目 | 修改檔案 | 狀態 | 驗證證據 |
+|---|---|---|---|
+| P1-03 Backend 長時長防護 | `generate_backend.py`、`MainForm.cs`、`telegram_bot.py`、`test_backend.py` | 通過 | `thinking=True` 且 >480 秒預設拒絕；`allow_long_thinking=true` 才放行；Telegram 長曲自動關閉 thinking；15 tests OK |
+| P1-06 統一 ProcessSupervisor | `ProcessSupervisor.cs`、`MainForm.cs` | 通過（程式與建置） | Daemon／專輯／Telegram 改用 StopTree，taskkill 後等待並確認退出；build OK |
+| P2-01 鎖例外分類 | `gpu_lock.py`、`generate_backend.py`、`gpu_lock_hold.py`、`test_gpu_lock.py` | 通過 | 新增 `GpuLockError`；檔案系統錯誤不再誤報 GpuBusy；15 tests OK |
+| P2-02 協作鎖範圍 | `MainForm.Layout.cs` | 部分完成（UI 提示＋文件） | Offload 下拉加入 tooltip：只涵蓋本程式／Telegram／SD 封面 |
+| P2-03 文件狀態 | `CODE_REVIEW_FIXES_20261117.md` | 通過 | 新增本「最新狀態」表，不改寫歷史批次 |
+| P2-04 相依版本鎖定 | `requirements_lock.txt`、`scripts/check_lock.py`、`build.ps1` | 通過 | 69 packages；`build.ps1 -Preflight` 顯示 lock matched |
+
+### 驗證
+
+- `build.ps1`：編譯＋selftest＋15 tests OK。
+- `build.ps1 -Preflight`：GPU 偵測、backend preflight、requirements lock（69 packages）全部通過。
+- `--ui-selftest`：通過。
+- 長時長：backend 拒絕 `thinking=True, duration=481`；`allow_long_thinking=true` 可通過。
+- ProcessSupervisor：程式編譯通過；實際取消／關閉 App 的程序退出未做大規模實機測試。
+
+### 最新狀態（2026-11-17）
+
+| 項目 | 狀態 |
+|---|---|
+| P0-01 SD GPU 鎖 | 已實作 lease；實機 OOM 未驗證 |
+| P1-01 Daemon 卸載／遠端交接 | 已實作（Telegram／SD 前釋放＋5 分鐘閒置）；實機未驗證 |
+| P1-02 模型參照釋放 | 已實作；VRAM 實機未驗證 |
+| P1-03 長時長防護 | 已實作 Backend 拒絕＋桌面 opt-in＋Telegram 自動關閉 thinking |
+| P1-04 SD 埠／互斥 | 已實作；實機未驗證 |
+| P1-05 fallback／Sidecar | 已實作；故障注入未驗證 |
+| P1-06 ProcessSupervisor | 已實作 |
+| P1-07 Telegram 設定快照 | 已實作；實機未驗證 |
+| P1-08 測試鎖隔離 | 已完成 |
+| P2-01 鎖例外分類 | 已完成 |
+| P2-02 協作鎖範圍 | 已加 UI 提示與文件；仍非硬體鎖 |
+| P2-03 文件狀態 | 已完成 |
+| P2-04 相依版本鎖定 | 已完成 |
+
+### 範圍外（未修）
+
+- SD／ACE-Step 完整 OOM 實機驗證、Telegram 併發與 5 分鐘閒置卸載仍需實機測試。
+- P2-02 本質上是協作式鎖，外部程式仍不受保護。

@@ -109,6 +109,7 @@ namespace AIMusicGenerator
         private DateTime jobStarted;
         private int maxDurationWithLm = 480;
         private bool updatingDuration;
+        private bool allowLongThinkingThisJob;
         private readonly Queue<Dictionary<string, object>> batchQueue = new Queue<Dictionary<string, object>>();
         private readonly List<string> batchOutputs = new List<string>();
         private string batchPrompt = "";
@@ -233,6 +234,7 @@ namespace AIMusicGenerator
 
         private bool ConfirmLongDuration(double seconds, bool album)
         {
+            allowLongThinkingThisJob = false;
             if (!chkThinking.Checked || seconds <= maxDurationWithLm) return true;
             if (uiTestTimer != null) return true;
             string message =
@@ -247,6 +249,11 @@ namespace AIMusicGenerator
             {
                 chkThinking.Checked = false;
                 AppendLog("=== 已關閉 LM 思考以降低 VRAM 風險 ===");
+            }
+            else
+            {
+                allowLongThinkingThisJob = true;
+                AppendLog("=== 使用者選擇保留 LM 思考與超長時長 ===");
             }
             return true;
         }
@@ -1306,6 +1313,7 @@ namespace AIMusicGenerator
             config["lyrics"] = txtLyrics.Text.Trim().Length == 0 ? "[Instrumental]" : txtLyrics.Text.Trim();
             config["instrumental"] = chkInstrumental.Checked;
             config["thinking"] = chkThinking.Checked;
+            config["allow_long_thinking"] = allowLongThinkingThisJob;
             config["bpm"] = chkAutoBpm.Checked ? null : (object)(int)numBpm.Value;
             config["duration"] = (double)numDuration.Value;
             config["inference_steps"] = (int)numSteps.Value;
@@ -1523,12 +1531,7 @@ namespace AIMusicGenerator
                 albumCancelled = true;
                 try
                 {
-                    Process.Start(new ProcessStartInfo("taskkill",
-                        "/PID " + album.Id + " /T /F")
-                    {
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    });
+                    ProcessSupervisor.StopTree(album, 5000);
                     AppendLog("=== 已送出取消專輯指令 ===");
                     SetStatus("正在取消專輯...");
                 }
@@ -1579,22 +1582,8 @@ namespace AIMusicGenerator
         {
             Process running = daemon;
             if (running == null) return;
-            try
-            {
-                if (!running.HasExited)
-                {
-                    Process.Start(new ProcessStartInfo("taskkill",
-                        "/PID " + running.Id + " /T /F")
-                    {
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    });
-                }
-            }
-            catch (Exception ex)
-            {
-                AppendLog("取消失敗: " + ex.Message);
-            }
+            if (!ProcessSupervisor.StopTree(running, 5000))
+                AppendLog("取消程序失敗: PID " + running.Id);
         }
 
         private void OnOutput(object sender, DataReceivedEventArgs e)
@@ -2502,31 +2491,9 @@ namespace AIMusicGenerator
         {
             closing = true;
             if (albumProcess != null && !albumProcess.HasExited)
-            {
-                try
-                {
-                    Process.Start(new ProcessStartInfo("taskkill",
-                        "/PID " + albumProcess.Id + " /T /F")
-                    {
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    });
-                }
-                catch (Exception) { }
-            }
+                ProcessSupervisor.StopTree(albumProcess, 5000);
             if (telegramProcess != null && !telegramProcess.HasExited)
-            {
-                try
-                {
-                    Process.Start(new ProcessStartInfo("taskkill",
-                        "/PID " + telegramProcess.Id + " /T /F")
-                    {
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    });
-                }
-                catch (Exception) { }
-            }
+                ProcessSupervisor.StopTree(telegramProcess, 5000);
             SdCoverClient.Stop();
             DisposeAudio();
             finishTimer.Stop();
@@ -2540,23 +2507,18 @@ namespace AIMusicGenerator
             {
                 try
                 {
-                    if (!running.HasExited)
+                if (!running.HasExited)
+                {
+                    try
                     {
-                        try
-                        {
-                            running.StandardInput.WriteLine("quit");
-                            running.StandardInput.Flush();
-                        }
-                        catch (Exception)
-                        {
-                        }
-                        Process.Start(new ProcessStartInfo("taskkill",
-                            "/PID " + running.Id + " /T /F")
-                        {
-                            UseShellExecute = false,
-                            CreateNoWindow = true
-                        });
+                        running.StandardInput.WriteLine("quit");
+                        running.StandardInput.Flush();
                     }
+                    catch (Exception)
+                    {
+                    }
+                    ProcessSupervisor.StopTree(running, 3000);
+                }
                 }
                 catch (Exception)
                 {

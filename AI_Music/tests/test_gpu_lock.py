@@ -14,7 +14,7 @@ APP = BASE / "app"
 sys.path.insert(0, str(APP))
 
 import generate_backend as backend  # noqa: E402
-from gpu_lock import GpuBusy, acquire  # noqa: E402
+from gpu_lock import GpuBusy, GpuLockError, acquire  # noqa: E402
 
 backend._stdio()
 
@@ -67,6 +67,21 @@ class GpuLockTests(unittest.TestCase):
                     stream.close()
                 except Exception:
                     pass
+
+    def test_filesystem_error_is_not_reported_as_busy(self):
+        with tempfile.TemporaryDirectory(prefix="aimusic_lock_error_") as tmp:
+            blocker = Path(tmp) / "not_a_directory"
+            blocker.write_text("x", encoding="utf-8")
+            previous = os.environ.get("AIMUSIC_GPU_LOCK_DIR")
+            os.environ["AIMUSIC_GPU_LOCK_DIR"] = str(blocker / "child")
+            try:
+                with self.assertRaises(GpuLockError):
+                    acquire("probe", 0)
+            finally:
+                if previous is None:
+                    os.environ.pop("AIMUSIC_GPU_LOCK_DIR", None)
+                else:
+                    os.environ["AIMUSIC_GPU_LOCK_DIR"] = previous
 
     def test_lock_is_cross_process_and_released_on_death(self):
         process = self._hold_lock()

@@ -277,6 +277,7 @@ namespace AIMusicGenerator
             toolTip.SetToolTip(btnTelegram, "啟動 Telegram 遠端控制");
             toolTip.SetToolTip(btnTheme, "切換深色／淺色主題");
             toolTip.SetToolTip(btnExpandPrompt, "開啟大型提示詞編輯視窗");
+            toolTip.SetToolTip(comboOffload, "GPU 鎖僅涵蓋本程式、Telegram 與 SD 封面；外部模型或程式不受保護");
             toolTip.SetToolTip(btnBrowse, "選擇輸出資料夾");
             toolTip.SetToolTip(btnRandomSeed, "清除種子（每次隨機）");
             toolTip.SetToolTip(btnPlayPause, "播放／暫停");

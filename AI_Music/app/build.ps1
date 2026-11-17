@@ -34,6 +34,9 @@ if ($Preflight) {
     $backend = Join-Path $appDir 'generate_backend.py'
     & $python $backend --preflight
     if ($LASTEXITCODE -ne 0) { throw "preflight failed: $LASTEXITCODE" }
+    $lockCheck = Join-Path (Split-Path -Parent $appDir) 'scripts\check_lock.py'
+    & $python $lockCheck
+    if ($LASTEXITCODE -ne 0) { throw "requirements lock check failed: $LASTEXITCODE" }
 }
 
 Write-Host "OK: $exe"
