@@ -261,7 +261,7 @@ Commit：`dcccd39`
 ## 第 8 批（長曲、metadata、YouTube 準備）
 
 分支：`fix/review-batch8`
-Commit：提交後填入
+Commit：`c184fec`
 
 | 項目 | 修改檔案 | 狀態 | 驗證證據 |
 |---|---|---|---|
