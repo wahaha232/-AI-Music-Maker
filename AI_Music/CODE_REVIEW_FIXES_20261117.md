@@ -223,7 +223,7 @@ Commit：`33dfd4a`
 ## 第 6 批（SD 實機驗證）
 
 分支：`fix/review-batch6`
-Commit：提交後填入
+Commit：`dd23584`、`d256b02`
 
 ### 實機測試
 
