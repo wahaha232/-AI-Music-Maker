@@ -195,6 +195,7 @@ Commit：`33dfd4a`
 - `--ui-selftest`：通過。
 - 長時長：backend 拒絕 `thinking=True, duration=481`；`allow_long_thinking=true` 可通過。
 - ProcessSupervisor：程式編譯通過；實際取消／關閉 App 的程序退出未做大規模實機測試。
+- 實機短曲：`--ui-test` 以 10 秒設定生成，daemon 持有鎖，外部 probe 得到 `BUSY pid=17484 source=daemon`；UI test exit 0；產出 MP3 765,581 bytes＋MP4 326,144 bytes；結束後 probe `ACQUIRED`，Lock 已釋放；測試設定已還原。
 
 ### 最新狀態（2026-11-17）
 
