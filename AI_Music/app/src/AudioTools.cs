@@ -53,46 +53,48 @@ namespace AIMusicGenerator
 
         public static void WriteTags(string path, string prompt, long seed, string bpm, string key, string format, string coverPath)
         {
-            TagLib.File file = TagLib.File.Create(path);
-            string title = (prompt ?? "").Trim().Replace("\r", " ").Replace("\n", " ");
-            if (title.Length > 200) title = title.Substring(0, 200);
-            file.Tag.Title = title;
-            file.Tag.Performers = new string[] { "AI Music Maker" };
-            file.Tag.Comment = "seed=" + seed + "; bpm=" + bpm + "; key=" + key + "; format=" + format;
-            bool hasCover = false;
-            if (!string.IsNullOrEmpty(coverPath) && System.IO.File.Exists(coverPath))
+            using (TagLib.File file = TagLib.File.Create(path))
             {
+                string title = (prompt ?? "").Trim().Replace("\r", " ").Replace("\n", " ");
+                if (title.Length > 200) title = title.Substring(0, 200);
+                file.Tag.Title = title;
+                file.Tag.Performers = new string[] { "AI Music Maker" };
+                file.Tag.Comment = "seed=" + seed + "; bpm=" + bpm + "; key=" + key + "; format=" + format;
+                bool hasCover = false;
+                if (!string.IsNullOrEmpty(coverPath) && System.IO.File.Exists(coverPath))
+                {
+                    try
+                    {
+                        byte[] bytes = System.IO.File.ReadAllBytes(coverPath);
+                        TagLib.Picture picture = new TagLib.Picture();
+                        picture.Data = new TagLib.ByteVector(bytes);
+                        picture.Type = TagLib.PictureType.FrontCover;
+                        picture.MimeType = coverPath.EndsWith(".png", StringComparison.OrdinalIgnoreCase)
+                            ? "image/png" : "image/jpeg";
+                        picture.Description = "Cover";
+                        file.Tag.Pictures = new TagLib.IPicture[] { picture };
+                        hasCover = true;
+                    }
+                    catch (Exception)
+                    {
+                        hasCover = false;
+                    }
+                }
                 try
                 {
-                    byte[] bytes = System.IO.File.ReadAllBytes(coverPath);
-                    TagLib.Picture picture = new TagLib.Picture();
-                    picture.Data = new TagLib.ByteVector(bytes);
-                    picture.Type = TagLib.PictureType.FrontCover;
-                    picture.MimeType = coverPath.EndsWith(".png", StringComparison.OrdinalIgnoreCase)
-                        ? "image/png" : "image/jpeg";
-                    picture.Description = "Cover";
-                    file.Tag.Pictures = new TagLib.IPicture[] { picture };
-                    hasCover = true;
+                    file.Save();
                 }
                 catch (Exception)
                 {
-                    hasCover = false;
-                }
-            }
-            try
-            {
-                file.Save();
-            }
-            catch (Exception)
-            {
-                if (hasCover)
-                {
-                    file.Tag.Pictures = new TagLib.IPicture[0];
-                    file.Save();
-                }
-                else
-                {
-                    throw;
+                    if (hasCover)
+                    {
+                        file.Tag.Pictures = new TagLib.IPicture[0];
+                        file.Save();
+                    }
+                    else
+                    {
+                        throw;
+                    }
                 }
             }
         }
@@ -101,12 +103,14 @@ namespace AIMusicGenerator
         {
             try
             {
-                TagLib.File file = TagLib.File.Create(path);
-                string title = file.Tag.Title ?? "";
-                string comment = file.Tag.Comment ?? "";
-                int pictures = file.Tag.Pictures == null ? 0 : file.Tag.Pictures.Length;
-                if (title.Length > 60) title = title.Substring(0, 60);
-                return (title.Length > 0 ? title + "  |  " : "") + comment + "  |  pictures=" + pictures;
+                using (TagLib.File file = TagLib.File.Create(path))
+                {
+                    string title = file.Tag.Title ?? "";
+                    string comment = file.Tag.Comment ?? "";
+                    int pictures = file.Tag.Pictures == null ? 0 : file.Tag.Pictures.Length;
+                    if (title.Length > 60) title = title.Substring(0, 60);
+                    return (title.Length > 0 ? title + "  |  " : "") + comment + "  |  pictures=" + pictures;
+                }
             }
             catch (Exception)
             {

@@ -43,8 +43,8 @@ namespace AIMusicGenerator
             Label l2 = MakeLabel("每首長度（秒）", 380, 76);
             numDuration.SetBounds(380, 102, 100, 28);
             numDuration.Minimum = 10;
-            numDuration.Maximum = 480;
-            numDuration.Value = Math.Max(10, Math.Min(480, duration));
+            numDuration.Maximum = 7200;
+            numDuration.Value = Math.Max(10, Math.Min(7200, duration));
 
             Label l3 = MakeLabel("曲目（每行一首；格式：歌名 | 提示詞 | 秒數，後兩者可省略）", 12, 144);
             txtTracks.SetBounds(12, 172, 720, 300);

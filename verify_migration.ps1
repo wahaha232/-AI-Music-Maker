@@ -53,6 +53,7 @@ foreach ($venv in @($main, $hf)) {
         foreach ($old in $OldPaths) {
             if ((Find-OldPath $ascii $old)) {
                 W ("    STALE  " + $f.FullName)
+                Add-Failure ("stale path: " + $f.FullName)
                 $hits++
             }
         }

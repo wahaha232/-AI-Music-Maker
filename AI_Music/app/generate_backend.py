@@ -95,8 +95,8 @@ def normalize_config(data: dict) -> dict:
     if not caption:
         raise ValueError("caption 不可為空")
     duration = float(cfg["duration"])
-    if not 10.0 <= duration <= 600.0:
-        raise ValueError("duration 必須介於 10 到 600 秒")
+    if not 10.0 <= duration <= 7200.0:
+        raise ValueError("duration 必須介於 10 到 7200 秒")
     raw_bpm = cfg.get("bpm")
     if raw_bpm in (None, "", "auto", "Auto"):
         bpm = None
@@ -265,7 +265,7 @@ def unique_target(out_dir: Path, prefix: str, seed: int, ext: str = "wav") -> Pa
     return target
 
 
-def run_job(dit, llm, cfg: dict) -> int:
+def run_job(dit, llm, cfg: dict) -> tuple[int, Path | None]:
     import numpy as np
     import soundfile as sf
     from acestep.inference import GenerationConfig, GenerationParams, generate_music
@@ -323,7 +323,7 @@ def run_job(dit, llm, cfg: dict) -> int:
         _emit("info", f"生成耗時 {elapsed:.1f}s ok={getattr(result, 'success', False)}")
         if not getattr(result, "success", False):
             _emit("error", f"生成失敗: {getattr(result, 'error', None) or getattr(result, 'status_message', '')}")
-            return 1
+            return 1, None
 
         produced = None
         audios = getattr(result, "audios", []) or []
@@ -336,7 +336,7 @@ def run_job(dit, llm, cfg: dict) -> int:
             produced = next((p for p in wavs if p.is_file()), None)
         if produced is None:
             _emit("error", "模型回報成功，但找不到輸出音檔")
-            return 1
+            return 1, None
 
         actual_seed = seed
         if audios and isinstance(audios[0], dict):
@@ -355,16 +355,35 @@ def run_job(dit, llm, cfg: dict) -> int:
             except OSError:
                 pass
 
-        data, sample_rate = sf.read(str(target), always_2d=True)
+        sample_rate = 0
+        channels = 0
+        frames = 0
+        peak = 0.0
+        rms = 0.0
+        try:
+            info_sf = sf.info(str(target))
+            sample_rate = int(info_sf.samplerate)
+            channels = int(info_sf.channels)
+            frames = int(info_sf.frames)
+            sq_sum = 0.0
+            for block in sf.blocks(str(target), blocksize=max(1, sample_rate * 10),
+                                   dtype="float32", always_2d=True):
+                if block.size == 0:
+                    continue
+                peak = max(peak, float(np.max(np.abs(block))))
+                sq_sum += float(np.sum(np.square(block, dtype=np.float64)))
+            rms = (sq_sum / max(1, frames * channels)) ** 0.5
+        except Exception as exc:
+            _emit("info", f"音訊統計略過: {type(exc).__name__}: {exc}")
         info = {
             "path": str(target),
-            "sample_rate": int(sample_rate),
-            "channels": int(data.shape[1]),
-            "frames": int(data.shape[0]),
-            "duration_sec": round(data.shape[0] / float(sample_rate), 2),
+            "sample_rate": sample_rate,
+            "channels": channels,
+            "frames": frames,
+            "duration_sec": round(frames / float(sample_rate), 2) if sample_rate else 0.0,
             "size_mb": round(target.stat().st_size / 1024**2, 2),
-            "peak": round(float(np.max(np.abs(data))) if data.size else 0.0, 4),
-            "rms": round(float(np.sqrt(np.mean(np.square(data)))) if data.size else 0.0, 5),
+            "peak": round(peak, 4),
+            "rms": round(rms, 5),
         }
         sidecar = target.with_suffix(".json")
         sidecar.write_text(json.dumps(
@@ -376,7 +395,7 @@ def run_job(dit, llm, cfg: dict) -> int:
         _emit("audio", f"{info['duration_sec']}s {info['sample_rate']}Hz "
                        f"{info['channels']}ch {info['size_mb']}MB peak={info['peak']}")
         _emit("done", str(target))
-        return 0
+        return 0, target
     finally:
         shutil.rmtree(run_dir, ignore_errors=True)
         try:
@@ -406,7 +425,8 @@ def run_oneshot(cfg: dict) -> int:
     dit = llm = None
     try:
         dit, llm = load_handlers(cfg["offload_mode"])
-        return run_job(dit, llm, cfg)
+        code, _ = run_job(dit, llm, cfg)
+        return code
     finally:
         release_models(dit, llm)
 
@@ -428,7 +448,7 @@ def run_daemon(offload_mode: str = "auto") -> int:
                     break
                 cfg = normalize_config(data)
                 _emit("job", f"start seed={cfg['seed']}")
-                code = run_job(dit, llm, cfg)
+                code, _ = run_job(dit, llm, cfg)
             except Exception as exc:  # noqa: BLE001 - keep the daemon alive
                 _emit("error", f"{type(exc).__name__}: {exc}")
                 traceback.print_exc()
@@ -459,23 +479,20 @@ def run_album(album_path: Path) -> int:
         for index, track in enumerate(tracks, 1):
             merged = dict(shared)
             merged.update({k: v for k, v in track.items() if k != "title"})
+            if track.get("prompt"):
+                merged["caption"] = str(track["prompt"])
             cfg = normalize_config(merged)
-            cfg["caption"] = str(track.get("prompt") or cfg["caption"])
-            cfg["duration"] = float(track.get("duration") or cfg["duration"])
             cfg["output_dir"] = str(out_dir)
             title = str(track.get("title") or ("Track " + str(index)))
             safe = re.sub(r"[^\w\-\u4e00-\u9fff]+", "_", title).strip("_") or ("track" + str(index))
             cfg["filename_prefix"] = f"{index:02d}_{safe}"
             _emit("album", f"{index}/{len(tracks)} {title}")
-            code = run_job(dit, llm, cfg)
-            if code != 0:
+            code, produced = run_job(dit, llm, cfg)
+            if code != 0 or produced is None:
                 _emit("album", f"track {index} failed with code {code}")
                 continue
-            candidates = sorted(out_dir.glob(cfg["filename_prefix"] + "*"),
-                                key=lambda item: item.stat().st_mtime, reverse=True)
-            if candidates:
-                files.append({"index": index, "title": title,
-                              "file": str(candidates[0]), "prompt": cfg["caption"]})
+            files.append({"index": index, "title": title,
+                          "file": str(produced), "prompt": cfg["caption"]})
         meta = {"album_title": data.get("album_title", ""),
                 "artist": data.get("artist", ""),
                 "created": datetime.now().isoformat(timespec="seconds"),

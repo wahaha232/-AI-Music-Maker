@@ -14,6 +14,65 @@ namespace AIMusicGenerator
                 Environment.Exit(AutoRunner.Run(args[1]));
                 return;
             }
+            if (args.Length >= 3 && args[0] == "--audio-edit-test")
+            {
+                try
+                {
+                    System.Text.StringBuilder log = new System.Text.StringBuilder();
+                    string input = args[1];
+                    string outDir = args[2];
+                    Directory.CreateDirectory(outDir);
+                    string fadeOut = Path.Combine(outDir,
+                        Path.GetFileNameWithoutExtension(input) + "_fade_test" + Path.GetExtension(input));
+                    int fadeCode = AudioEditRunner.Run(
+                        Paths.BuildAudioFadeStartInfo(input, 1.0, 1.0, fadeOut),
+                        delegate(string line) { log.AppendLine(line); });
+                    int normCode = AudioEditRunner.Run(
+                        Paths.BuildAudioNormalizeStartInfo(new string[] { input }, outDir),
+                        delegate(string line) { log.AppendLine(line); });
+                    int mergeCode = 0;
+                    if (args.Length >= 4)
+                    {
+                        string merged = Path.Combine(outDir, "merged_test.mp3");
+                        mergeCode = AudioEditRunner.Run(
+                            Paths.BuildAudioMergeStartInfo(new string[] { input, args[3] }, merged),
+                            delegate(string line) { log.AppendLine(line); });
+                    }
+                    log.AppendLine("fade=" + fadeCode + " normalize=" + normCode +
+                                   " merge=" + mergeCode);
+                    Directory.CreateDirectory(Paths.TempDir);
+                    File.WriteAllText(Path.Combine(Paths.TempDir, "audio_edit_test.txt"), log.ToString());
+                    Environment.Exit(fadeCode == 0 && normCode == 0 && mergeCode == 0 ? 0 : 1);
+                }
+                catch (Exception ex)
+                {
+                    Directory.CreateDirectory(Paths.TempDir);
+                    File.WriteAllText(Path.Combine(Paths.TempDir, "audio_edit_test.txt"), ex.ToString());
+                    Environment.Exit(1);
+                }
+                return;
+            }
+            if (args.Length >= 2 && args[0] == "--video-test")
+            {
+                try
+                {
+                    System.Text.StringBuilder log = new System.Text.StringBuilder();
+                    string image = args.Length >= 3 ? args[2] : "";
+                    int code = VideoRunner.Run(args[1], image, delegate(string line) { log.AppendLine(line); });
+                    string output = Path.ChangeExtension(args[1], ".mp4");
+                    log.AppendLine("exit=" + code + " output=" + output + " exists=" + File.Exists(output));
+                    Directory.CreateDirectory(Paths.TempDir);
+                    File.WriteAllText(Path.Combine(Paths.TempDir, "video_test.txt"), log.ToString());
+                    Environment.Exit(code == 0 && File.Exists(output) ? 0 : 1);
+                }
+                catch (Exception ex)
+                {
+                    Directory.CreateDirectory(Paths.TempDir);
+                    File.WriteAllText(Path.Combine(Paths.TempDir, "video_test.txt"), ex.ToString());
+                    Environment.Exit(1);
+                }
+                return;
+            }
             if (args.Length >= 2 && args[0] == "--sd-test")
             {
                 try
@@ -59,6 +118,26 @@ namespace AIMusicGenerator
                 return;
             }
 
+            if (args.Length >= 2 && args[0] == "--auto-video-test")
+            {
+                try
+                {
+                    using (MainForm form = new MainForm())
+                    {
+                        string report = form.AutoVideoTest(args[1]);
+                        Directory.CreateDirectory(Paths.TempDir);
+                        File.WriteAllText(Path.Combine(Paths.TempDir, "auto_video_test.txt"), report);
+                        Environment.Exit(report.StartsWith("ok") ? 0 : 1);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Directory.CreateDirectory(Paths.TempDir);
+                    File.WriteAllText(Path.Combine(Paths.TempDir, "auto_video_test.txt"), ex.ToString());
+                    Environment.Exit(1);
+                }
+                return;
+            }
             if (args.Length >= 1 && args[0] == "--ui-selftest")
             {
                 try

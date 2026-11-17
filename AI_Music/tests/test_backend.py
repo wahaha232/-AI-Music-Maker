@@ -44,9 +44,9 @@ class NormalizeConfigTests(unittest.TestCase):
         self.assertIsNone(self._config(bpm=None)["bpm"])
 
     def test_duration_boundaries(self):
-        for value in (10, 600):
+        for value in (10, 7200):
             self.assertEqual(self._config(duration=value)["duration"], float(value))
-        for value in (9, 601):
+        for value in (9, 7201):
             with self.assertRaises(ValueError):
                 self._config(duration=value)
 
@@ -67,6 +67,53 @@ class NormalizeConfigTests(unittest.TestCase):
             self._config(audio_format="ogg")
         with self.assertRaises(ValueError):
             self._config(offload_mode="never")
+
+
+class AlbumTests(unittest.TestCase):
+    def test_album_records_audio_not_sidecar(self):
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            album = {
+                "album_title": "Test",
+                "artist": "AI",
+                "output_dir": str(out),
+                "shared": {"caption": "shared", "duration": 30, "thinking": False},
+                "tracks": [{"title": "One", "prompt": "one", "duration": 30}],
+            }
+            path = out / "album_input.json"
+            path.write_text(json.dumps(album), encoding="utf-8")
+
+            def fake_job(dit, llm, cfg):
+                target = out / "01_One.mp3"
+                target.write_bytes(b"audio")
+                return 0, target
+
+            with mock.patch.object(backend, "load_handlers", return_value=(None, None)), \
+                    mock.patch.object(backend, "release_models"), \
+                    mock.patch.object(backend, "run_job", side_effect=fake_job):
+                code = backend.run_album(path)
+            self.assertEqual(code, 0)
+            meta = json.loads((out / "album.json").read_text(encoding="utf-8"))
+            self.assertEqual(meta["tracks"][0]["file"], str(out / "01_One.mp3"))
+
+    def test_album_track_duration_is_validated(self):
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            album = {
+                "output_dir": str(out),
+                "shared": {"caption": "shared", "duration": 30, "thinking": False},
+                "tracks": [{"title": "Too long", "duration": 7201}],
+            }
+            path = out / "album_input.json"
+            path.write_text(json.dumps(album), encoding="utf-8")
+            with mock.patch.object(backend, "load_handlers", return_value=(None, None)), \
+                    mock.patch.object(backend, "release_models"):
+                with self.assertRaises(ValueError):
+                    backend.run_album(path)
 
 
 class UniqueTargetTests(unittest.TestCase):

@@ -25,8 +25,12 @@ Copy-Item (Join-Path $lib '*.dll') $appDir -Force
 & $exe --selftest
 if ($LASTEXITCODE -ne 0) { throw "selftest failed: $LASTEXITCODE" }
 
+$python = Join-Path (Split-Path -Parent $appDir) '..\AI_Music.venv\Scripts\python.exe'
+$tests = Join-Path (Split-Path -Parent $appDir) 'tests'
+& $python -m unittest discover -s $tests
+if ($LASTEXITCODE -ne 0) { throw "unittest failed: $LASTEXITCODE" }
+
 if ($Preflight) {
-    $python = Join-Path (Split-Path -Parent $appDir) '..\AI_Music.venv\Scripts\python.exe'
     $backend = Join-Path $appDir 'generate_backend.py'
     & $python $backend --preflight
     if ($LASTEXITCODE -ne 0) { throw "preflight failed: $LASTEXITCODE" }

@@ -23,6 +23,9 @@ namespace AIMusicGenerator
         private readonly TextBox txtLog = new TextBox();
         private readonly NumericUpDown numBpm = new NumericUpDown();
         private readonly NumericUpDown numDuration = new NumericUpDown();
+        private readonly NumericUpDown numHours = new NumericUpDown();
+        private readonly NumericUpDown numMinutes = new NumericUpDown();
+        private readonly NumericUpDown numSeconds = new NumericUpDown();
         private readonly NumericUpDown numSteps = new NumericUpDown();
         private readonly NumericUpDown numGuidance = new NumericUpDown();
         private readonly ComboBox comboKey = new ComboBox();
@@ -31,10 +34,18 @@ namespace AIMusicGenerator
         private readonly ComboBox comboFormat = new ComboBox();
         private readonly ComboBox comboOffload = new ComboBox();
         private readonly ComboBox comboTheme = new ComboBox();
+        private readonly ComboBox comboStyleTemplate = new ComboBox();
+        private readonly Button btnApplyTemplate = new Button();
+        private readonly Button btnExpandPrompt = new Button();
         private readonly CheckBox chkAutoBpm = new CheckBox();
         private readonly CheckBox chkInstrumental = new CheckBox();
         private readonly CheckBox chkThinking = new CheckBox();
         private readonly CheckBox chkKeepModel = new CheckBox();
+        private readonly CheckBox chkAutoVideo = new CheckBox();
+        private readonly Queue<KeyValuePair<string, string>> videoQueue =
+            new Queue<KeyValuePair<string, string>>();
+        private readonly object videoGate = new object();
+        private bool videoRunning;
         private readonly Button btnGenerate = new Button();
         private readonly Button btnCancel = new Button();
         private readonly Button btnOpen = new Button();
@@ -51,9 +62,11 @@ namespace AIMusicGenerator
         private readonly Button btnSd = new Button();
         private readonly Button btnTelegram = new Button();
         private readonly Button btnAlbum = new Button();
+        private readonly Button btnMediaTools = new Button();
         private Process albumProcess;
         private bool albumStarting;
         private bool albumCancelled;
+        private string currentAlbumFolder = "";
         private Process telegramProcess;
         private bool sdEnabled = false;
         private string sdUrl = "http://127.0.0.1:7860";
@@ -101,6 +114,7 @@ namespace AIMusicGenerator
         private int exitCode = -1;
         private DateTime jobStarted;
         private int maxDurationWithLm = 480;
+        private bool updatingDuration;
         private readonly Queue<Dictionary<string, object>> batchQueue = new Queue<Dictionary<string, object>>();
         private int batchTotal;
         private int batchCompleted;
@@ -171,7 +185,7 @@ namespace AIMusicGenerator
             Label lblPromptHeight = MakeLabel("高度", 500, 12);
             numPromptHeight.SetBounds(544, 8, 72, 28);
             numPromptHeight.Minimum = 60;
-            numPromptHeight.Maximum = 260;
+            numPromptHeight.Maximum = 10000;
             numPromptHeight.Increment = 10;
             numPromptHeight.Value = 110;
             numPromptHeight.ValueChanged += OnPromptHeightChanged;
@@ -232,7 +246,7 @@ namespace AIMusicGenerator
             numBpm.Minimum = 30;
             numBpm.Maximum = 300;
             numBpm.Value = 78;
-            numBpm.Width = 80;
+            numBpm.Width = 70;
             AddRowControl(row1, numBpm, 10);
             chkAutoBpm.Text = "自動";
             chkAutoBpm.Checked = true;
@@ -240,13 +254,32 @@ namespace AIMusicGenerator
             chkAutoBpm.CheckedChanged += OnAutoBpmChanged;
             AddRowControl(row1, chkAutoBpm, 18);
 
-            Label lblDuration = MakeLabel("長度(秒)", 0, 0);
+            Label lblDuration = MakeLabel("時長", 0, 0);
             AddRowLabel(row1, lblDuration);
+            numHours.Minimum = 0;
+            numHours.Maximum = 2;
+            numHours.Value = 0;
+            numHours.Width = 44;
+            numHours.ValueChanged += OnDurationPartsChanged;
+            AddRowControl(row1, numHours, 2);
+            AddRowLabel(row1, MakeLabel("時", 0, 0));
+            numMinutes.Minimum = 0;
+            numMinutes.Maximum = 59;
+            numMinutes.Value = 1;
+            numMinutes.Width = 44;
+            numMinutes.ValueChanged += OnDurationPartsChanged;
+            AddRowControl(row1, numMinutes, 2);
+            AddRowLabel(row1, MakeLabel("分", 0, 0));
+            numSeconds.Minimum = 0;
+            numSeconds.Maximum = 59;
+            numSeconds.Value = 0;
+            numSeconds.Width = 44;
+            numSeconds.ValueChanged += OnDurationPartsChanged;
+            AddRowControl(row1, numSeconds, 2);
+            AddRowLabel(row1, MakeLabel("秒", 0, 0));
             numDuration.Minimum = 10;
-            numDuration.Maximum = 600;
+            numDuration.Maximum = 7200;
             numDuration.Value = 60;
-            numDuration.Width = 86;
-            AddRowControl(row1, numDuration, 18);
 
             Label lblSteps = MakeLabel("步數", 0, 0);
             AddRowLabel(row1, lblSteps);
@@ -258,7 +291,7 @@ namespace AIMusicGenerator
 
             Label lblSeed = MakeLabel("種子", 0, 0);
             AddRowLabel(row1, lblSeed);
-            txtSeed.Width = 150;
+            txtSeed.Width = 120;
             txtSeed.HandleCreated += delegate(object sender, EventArgs e)
             {
                 SendMessage(txtSeed.Handle, EM_SETCUEBANNER, (IntPtr)1, "空白=隨機");
@@ -268,7 +301,23 @@ namespace AIMusicGenerator
             chkInstrumental.Text = "純音樂";
             chkInstrumental.Checked = true;
             chkInstrumental.AutoSize = true;
-            AddRowControl(row1, chkInstrumental, 14);
+            AddRowControl(row1, chkInstrumental, 18);
+
+            AddRowLabel(row1, MakeLabel("模板", 0, 0));
+            comboStyleTemplate.DropDownStyle = ComboBoxStyle.DropDownList;
+            comboStyleTemplate.Width = 150;
+            foreach (StyleTemplate template in StyleTemplates.All)
+                comboStyleTemplate.Items.Add(template);
+            if (comboStyleTemplate.Items.Count > 0) comboStyleTemplate.SelectedIndex = 0;
+            AddRowControl(row1, comboStyleTemplate, 8);
+            btnApplyTemplate.Text = "套用";
+            btnApplyTemplate.Width = 70;
+            btnApplyTemplate.Click += OnApplyStyleTemplate;
+            AddRowControl(row1, btnApplyTemplate, 8);
+            btnExpandPrompt.Text = "放大";
+            btnExpandPrompt.Width = 50;
+            btnExpandPrompt.Click += OnExpandPrompt;
+            AddRowControl(row1, btnExpandPrompt, 0);
 
             chkThinking.Text = "LM 思考 (較慢)";
             chkThinking.Checked = true;
@@ -346,10 +395,14 @@ namespace AIMusicGenerator
 
             chkKeepModel.Text = "取消時保留模型（背景跑完）";
             chkKeepModel.AutoSize = true;
-            AddRowControl(row3, chkKeepModel, 0);
+            AddRowControl(row3, chkKeepModel, 18);
+
+            chkAutoVideo.Text = "自動轉影片";
+            chkAutoVideo.AutoSize = true;
+            AddRowControl(row3, chkAutoVideo, 0);
 
             Label lblOut = MakeLabel("輸出資料夾", 12, 438);
-            txtOutDir.SetBounds(0, 0, 1000, 34);
+            txtOutDir.SetBounds(0, 0, 900, 34);
             btnBrowse.SetBounds(0, 0, 104, 38);
             btnBrowse.Text = "瀏覽...";
             btnBrowse.Click += OnBrowse;
@@ -365,12 +418,16 @@ namespace AIMusicGenerator
             btnCover.Text = "封面...";
             btnCover.Click += OnCover;
 
+            btnMediaTools.SetBounds(0, 0, 80, 38);
+            btnMediaTools.Text = "工具";
+            btnMediaTools.Click += OnMediaTools;
+
             FlowLayoutPanel outRow = new FlowLayoutPanel();
             outRow.SetBounds(12, 462, ClientSize.Width - 24, 44);
             outRow.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             outRow.WrapContents = false;
             outRow.BackColor = Color.Transparent;
-            foreach (Control item in new Control[] { txtOutDir, btnBrowse, btnCover, btnTelegram, btnAlbum })
+            foreach (Control item in new Control[] { txtOutDir, btnBrowse, btnCover, btnTelegram, btnAlbum, btnMediaTools })
             {
                 item.Margin = new Padding(0, 3, 8, 0);
                 outRow.Controls.Add(item);
@@ -628,10 +685,10 @@ namespace AIMusicGenerator
         private void SetPromptHeight(int height)
         {
             if (lowerControls == null || lowerControls.Count == 0) return;
-            const int minimumLog = 120;
+            const int minimumLog = 80;
             int maxHeight = txtCaption.Height + Math.Max(0, txtLog.Height - minimumLog);
             if (height > maxHeight) height = maxHeight;
-            height = Math.Max(60, Math.Min(260, height));
+            height = Math.Max(60, height);
             int delta = height - txtCaption.Height;
             if (delta == 0) return;
             updatingPromptSize = true;
@@ -656,11 +713,85 @@ namespace AIMusicGenerator
             ApplyDurationLimit();
         }
 
+        private void OnDurationPartsChanged(object sender, EventArgs e)
+        {
+            if (updatingDuration) return;
+            int hours = (int)numHours.Value;
+            int minutes = (int)numMinutes.Value;
+            int seconds = (int)numSeconds.Value;
+            if (hours >= 2)
+            {
+                hours = 2;
+                minutes = 0;
+                seconds = 0;
+            }
+            int total = hours * 3600 + minutes * 60 + seconds;
+            if (total < 10)
+            {
+                hours = 0;
+                minutes = 0;
+                seconds = 10;
+                total = 10;
+            }
+            if (total > 7200)
+            {
+                hours = 2;
+                minutes = 0;
+                seconds = 0;
+                total = 7200;
+            }
+            updatingDuration = true;
+            numHours.Value = hours;
+            numMinutes.Value = minutes;
+            numSeconds.Value = seconds;
+            numDuration.Value = total;
+            updatingDuration = false;
+        }
+
+        private void SetDurationFromSeconds(int seconds)
+        {
+            if (seconds < 10) seconds = 10;
+            if (seconds > 7200) seconds = 7200;
+            int hours = seconds / 3600;
+            int minutes = (seconds % 3600) / 60;
+            int remainder = seconds % 60;
+            int total = hours * 3600 + minutes * 60 + remainder;
+            updatingDuration = true;
+            numHours.Value = hours;
+            numMinutes.Value = minutes;
+            numSeconds.Value = remainder;
+            numDuration.Value = total;
+            updatingDuration = false;
+        }
+
         private void ApplyDurationLimit()
         {
-            decimal limit = chkThinking.Checked ? maxDurationWithLm : 600;
-            numDuration.Maximum = limit;
-            if (numDuration.Value > limit) numDuration.Value = limit;
+            numDuration.Maximum = 7200;
+            if (numDuration.Value > 7200) numDuration.Value = 7200;
+        }
+
+        private void OnExpandPrompt(object sender, EventArgs e)
+        {
+            using (PromptEditorDialog dialog = new PromptEditorDialog(txtCaption.Text))
+            {
+                if (dialog.ShowDialog(this) == DialogResult.OK)
+                    txtCaption.Text = dialog.PromptText;
+            }
+        }
+
+        private void OnApplyStyleTemplate(object sender, EventArgs e)
+        {
+            StyleTemplate template = comboStyleTemplate.SelectedItem as StyleTemplate;
+            if (template == null) return;
+            txtCaption.Text = template.Caption;
+            chkAutoBpm.Checked = false;
+            numBpm.Value = Clamp(template.Bpm, numBpm.Minimum, numBpm.Maximum);
+            SelectCombo(comboKey, template.Key);
+            SelectCombo(comboSignature, template.Signature);
+            chkInstrumental.Checked = template.Instrumental;
+            txtLyrics.Text = template.Instrumental ? "[Instrumental]" : txtLyrics.Text;
+            AppendLog("=== 已套用風格模板: " + template.Name + " ===");
+            SetStatus("已套用模板: " + template.Name);
         }
 
 
@@ -901,9 +1032,129 @@ namespace AIMusicGenerator
         private void HandleCoverThenTag(string path)
         {
             if (sdEnabled && sdModel.Length > 0)
+            {
                 StartSdCover(path);
-            else
-                TryTagOutput(path);
+                return;
+            }
+            TryTagOutput(path);
+            QueueAutoVideo(path);
+        }
+
+        private void QueueAutoVideo(string path)
+        {
+            if (!chkAutoVideo.Checked || string.IsNullOrEmpty(path) || !File.Exists(path)) return;
+            if (!File.Exists(Paths.VideoTool))
+            {
+                AppendLog("=== 找不到影片轉換腳本，已跳過: " + Paths.VideoTool + " ===");
+                return;
+            }
+            string image = ResolveVideoCover(path);
+            lock (videoGate)
+            {
+                videoQueue.Enqueue(new KeyValuePair<string, string>(path, image));
+                if (videoRunning) return;
+                videoRunning = true;
+            }
+            Thread worker = new Thread(ProcessVideoQueue);
+            worker.IsBackground = true;
+            worker.Start();
+        }
+
+        private void ProcessVideoQueue()
+        {
+            while (true)
+            {
+                KeyValuePair<string, string> job;
+                lock (videoGate)
+                {
+                    if (videoQueue.Count == 0)
+                    {
+                        videoRunning = false;
+                        return;
+                    }
+                    job = videoQueue.Dequeue();
+                }
+                string path = job.Key;
+                try
+                {
+                    string output = Path.ChangeExtension(path, ".mp4");
+                    if (File.Exists(output) && new FileInfo(output).Length > 1024)
+                    {
+                        AppendLog("=== 影片已存在，略過: " + output + " ===");
+                        continue;
+                    }
+                    if (File.Exists(output))
+                    {
+                        try { File.Delete(output); }
+                        catch (Exception ex)
+                        {
+                            AppendLog("=== 無法清除未完成影片: " + ex.Message + " ===");
+                            continue;
+                        }
+                    }
+                    AppendLog("=== 轉換影片: " + Path.GetFileName(path) + " ===");
+                    PostUi(delegate()
+                    {
+                        if (jobRunning || baseStatus.StartsWith("批次完成")) return;
+                        if (baseStatus.StartsWith("完成:"))
+                            SetStatus(baseStatus + "（影片轉換中）");
+                        else
+                            SetStatus("轉換影片中...");
+                    });
+                    int code = VideoRunner.Run(path, job.Value, delegate(string line)
+                    {
+                        AppendLog(line);
+                    });
+                    if (code == 0 && File.Exists(output))
+                    {
+                        AppendLog("=== 影片完成: " + output + " ===");
+                        PostUi(delegate()
+                        {
+                            if (jobRunning || baseStatus.StartsWith("批次完成")) return;
+                            const string marker = "（影片轉換中）";
+                            if (baseStatus.StartsWith("完成:"))
+                            {
+                                string text = baseStatus.EndsWith(marker)
+                                    ? baseStatus.Substring(0, baseStatus.Length - marker.Length)
+                                    : baseStatus;
+                                SetStatus(text + "（影片完成）");
+                            }
+                            else
+                            {
+                                SetStatus("影片完成: " + Path.GetFileName(output));
+                            }
+                        });
+                    }
+                    else
+                    {
+                        AppendLog("=== 影片轉換失敗 (exit " + code + "): " + path + " ===");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AppendLog("=== 影片轉換錯誤: " + ex.Message + " ===");
+                }
+            }
+        }
+
+        private string ResolveVideoCover(string audioPath)
+        {
+            string sidecar = Path.ChangeExtension(audioPath, ".cover.png");
+            if (File.Exists(sidecar)) return "";
+            if (!string.IsNullOrEmpty(coverPath) && File.Exists(coverPath)) return coverPath;
+            return "";
+        }
+
+        private void PostUi(Action action)
+        {
+            if (IsDisposed) return;
+            try
+            {
+                BeginInvoke(action);
+            }
+            catch (InvalidOperationException)
+            {
+            }
         }
 
         private void StartSdCover(string path)
@@ -932,6 +1183,7 @@ namespace AIMusicGenerator
                     BeginInvoke(new Action(delegate()
                     {
                         TryTagOutput(target, cover);
+                        QueueAutoVideo(target);
                         AppendLog("=== SD 封面完成: " + cover + " ===");
                         SetStatus("完成: " + Path.GetFileName(target) + "（SD 封面）");
                         RefreshHistory();
@@ -945,6 +1197,7 @@ namespace AIMusicGenerator
                         BeginInvoke(new Action(delegate()
                         {
                             TryTagOutput(target);
+                            QueueAutoVideo(target);
                         }));
                     }
                     catch (InvalidOperationException) { }
@@ -1220,8 +1473,7 @@ namespace AIMusicGenerator
                 string folder = Path.Combine(txtOutDir.Text.Trim(),
                     "album_" + safeTitle + "_" + DateTime.Now.ToString("yyyyMMdd_HHmmss"));
                 Directory.CreateDirectory(folder);
-                txtOutDir.Text = folder;
-                SaveSettings();
+                currentAlbumFolder = folder;
 
                 Dictionary<string, object> shared = BuildConfig(
                     Convert.ToString(tracks[0]["prompt"]), -1);
@@ -1301,6 +1553,7 @@ namespace AIMusicGenerator
             if (albumCancelled)
             {
                 albumCancelled = false;
+                currentAlbumFolder = "";
                 if (finished != null)
                 {
                     try { finished.WaitForExit(); finished.Dispose(); } catch (Exception) { }
@@ -1314,7 +1567,9 @@ namespace AIMusicGenerator
                 return;
             }
             int code = -1;
-            string folder = txtOutDir.Text.Trim();
+            string folder = currentAlbumFolder.Length > 0
+                ? currentAlbumFolder : txtOutDir.Text.Trim();
+            currentAlbumFolder = "";
             if (finished != null)
             {
                 try { finished.WaitForExit(); finished.WaitForExit(); code = finished.ExitCode; }
@@ -1364,7 +1619,11 @@ namespace AIMusicGenerator
             }
             else
             {
-                foreach (string file in files) TryTagOutput(file);
+                foreach (string file in files)
+                {
+                    TryTagOutput(file);
+                    QueueAutoVideo(file);
+                }
                 SetStatus("專輯完成 (" + files.Count + " 首) exit=" + code);
             }
             AppendLog("=== 專輯完成：共 " + files.Count + " 首 ===");
@@ -1396,7 +1655,11 @@ namespace AIMusicGenerator
                     {
                         BeginInvoke(new Action(delegate()
                         {
-                            foreach (string file in targets) TryTagOutput(file, cover);
+                            foreach (string file in targets)
+                            {
+                                TryTagOutput(file, cover);
+                                QueueAutoVideo(file);
+                            }
                             SetStatus("專輯完成，封面已寫入 " + targets.Count + " 首");
                             RefreshHistory();
                         }));
@@ -1410,7 +1673,11 @@ namespace AIMusicGenerator
                     {
                         BeginInvoke(new Action(delegate()
                         {
-                            foreach (string file in targets) TryTagOutput(file);
+                            foreach (string file in targets)
+                            {
+                                TryTagOutput(file);
+                                QueueAutoVideo(file);
+                            }
                         }));
                     }
                     catch (InvalidOperationException) { }
@@ -1418,6 +1685,21 @@ namespace AIMusicGenerator
             });
             worker.IsBackground = true;
             worker.Start();
+        }
+
+        private void OnMediaTools(object sender, EventArgs e)
+        {
+            string dir = txtOutDir.Text.Trim();
+            if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+            if (audioOutput != null && audioOutput.PlaybackState == PlaybackState.Playing)
+                audioOutput.Pause();
+            using (MediaToolsDialog dialog = new MediaToolsDialog(dir, delegate
+            {
+                RefreshHistory();
+            }))
+            {
+                dialog.ShowDialog(this);
+            }
         }
 
         private void OnTelegram(object sender, EventArgs e)
@@ -1661,6 +1943,10 @@ namespace AIMusicGenerator
             bar.Style = ProgressBarStyle.Marquee;
             AppendLog("=== 開始生成 ===");
             AppendLog("描述: " + caption);
+            int safeDuration = chkThinking.Checked ? maxDurationWithLm : 600;
+            if (numDuration.Value > safeDuration)
+                AppendLog("=== 注意：目前單次生成建議上限約 " + safeDuration +
+                          " 秒，超過可能因 VRAM 不足失敗；長曲分段尚未實作 ===");
 
             string offloadMode = Convert.ToString(config["offload_mode"]);
             if (daemon == null)
@@ -1877,6 +2163,11 @@ namespace AIMusicGenerator
                 if (batchActive && !cancelRequested)
                 {
                     if (code == 0) batchCompleted++; else batchErrors++;
+                    if (code == 0 && lastOutputFile.Length > 0)
+                    {
+                        TryTagOutput(lastOutputFile);
+                        QueueAutoVideo(lastOutputFile);
+                    }
                     exitCode = code;
                     exitOk = code == 0;
                     AppendLog("=== 批次進度 " + (batchCompleted + batchErrors) + "/" + batchTotal +
@@ -2093,6 +2384,12 @@ namespace AIMusicGenerator
             txtSeed.Enabled = !busy;
             numBpm.Enabled = !busy && !chkAutoBpm.Checked;
             numDuration.Enabled = !busy;
+            numHours.Enabled = !busy;
+            numMinutes.Enabled = !busy;
+            numSeconds.Enabled = !busy;
+            comboStyleTemplate.Enabled = !busy;
+            btnApplyTemplate.Enabled = !busy;
+            btnExpandPrompt.Enabled = !busy;
             numSteps.Enabled = !busy;
             numGuidance.Enabled = !busy;
             chkAutoBpm.Enabled = !busy;
@@ -2104,8 +2401,10 @@ namespace AIMusicGenerator
             chkInstrumental.Enabled = !busy;
             chkThinking.Enabled = !busy;
             chkKeepModel.Enabled = !busy;
+            chkAutoVideo.Enabled = !busy;
             chkBatch.Enabled = !busy;
             btnAlbum.Enabled = !busy;
+            btnMediaTools.Enabled = !busy;
             btnSd.Enabled = !busy;
             btnAdvanced.Enabled = !busy;
             btnLink.Enabled = !busy;
@@ -2313,7 +2612,7 @@ namespace AIMusicGenerator
             sdModel = GetString(s, "sd_model", "");
             sdSteps = (int)Clamp(GetDecimal(s, "sd_steps", 20m), 8m, 40m);
             sdSize = (int)Clamp(GetDecimal(s, "sd_size", 512m), 512m, 768m);
-            int promptHeight = (int)Clamp(GetDecimal(s, "prompt_height", 110m), 60m, 260m);
+            int promptHeight = (int)Clamp(GetDecimal(s, "prompt_height", 110m), 60m, 10000m);
             numPromptHeight.Value = promptHeight;
             SetPromptHeight(promptHeight);
             coverPath = GetString(s, "cover_path", Paths.CoverFile);
@@ -2321,6 +2620,7 @@ namespace AIMusicGenerator
             chkInstrumental.Checked = GetBool(s, "instrumental", true);
             chkThinking.Checked = GetBool(s, "thinking", true);
             chkKeepModel.Checked = GetBool(s, "keep_model_on_cancel", false);
+            chkAutoVideo.Checked = GetBool(s, "auto_video", true);
             chkAutoBpm.Checked = GetBool(s, "auto_bpm", true);
             SelectCombo(comboKey, GetString(s, "keyscale", ""));
             SelectCombo(comboSignature, GetString(s, "timesignature", ""));
@@ -2328,7 +2628,8 @@ namespace AIMusicGenerator
             SelectCombo(comboFormat, GetString(s, "audio_format", "wav"));
             SelectCombo(comboOffload, GetString(s, "offload_mode", "auto"));
             numBpm.Value = Clamp(GetDecimal(s, "bpm", 78m), numBpm.Minimum, numBpm.Maximum);
-            numDuration.Value = Clamp(GetDecimal(s, "duration", 60m), numDuration.Minimum, numDuration.Maximum);
+            numDuration.Value = Clamp(GetDecimal(s, "duration", 60m), 10m, 7200m);
+            SetDurationFromSeconds((int)numDuration.Value);
             numSteps.Value = Clamp(GetDecimal(s, "inference_steps", 8m), numSteps.Minimum, numSteps.Maximum);
             numGuidance.Value = Clamp(GetDecimal(s, "guidance_scale", 1.0m),
                 numGuidance.Minimum, numGuidance.Maximum);
@@ -2375,6 +2676,7 @@ namespace AIMusicGenerator
                 s["instrumental"] = chkInstrumental.Checked;
                 s["thinking"] = chkThinking.Checked;
                 s["keep_model_on_cancel"] = chkKeepModel.Checked;
+                s["auto_video"] = chkAutoVideo.Checked;
                 File.WriteAllText(Paths.SettingsFile, serializer.Serialize(s), new UTF8Encoding(false));
             }
             catch (Exception)
@@ -2519,6 +2821,33 @@ namespace AIMusicGenerator
                 SetPromptHeight(oldHeight);
                 report.AppendLine("restored_width=" + txtCaption.Width +
                                   " restored_height=" + txtCaption.Height);
+                report.AppendLine("auto_video=" + chkAutoVideo.Text +
+                                  " checked=" + chkAutoVideo.Checked +
+                                  " visible=" + chkAutoVideo.Visible);
+                int oldSeconds = (int)numDuration.Value;
+                SetDurationFromSeconds(7200);
+                report.AppendLine("duration_max=" + numHours.Value + "h" + numMinutes.Value +
+                                  "m total=" + numDuration.Value);
+                SetDurationFromSeconds(oldSeconds);
+                report.AppendLine("style_templates=" + comboStyleTemplate.Items.Count);
+                int oldPrompt = txtCaption.Height;
+                SetPromptHeight(10000);
+                report.AppendLine("prompt_max_height=" + txtCaption.Height);
+                SetPromptHeight(oldPrompt);
+                report.AppendLine("duration_parts=" + numHours.Value + "h" + numMinutes.Value +
+                                  "m total=" + numDuration.Value);
+                comboStyleTemplate.SelectedIndex = 0;
+                OnApplyStyleTemplate(this, EventArgs.Empty);
+                report.AppendLine("template_apply=" + numBpm.Value + "|" +
+                                  Convert.ToString(comboKey.SelectedItem) + "|" +
+                                  txtCaption.TextLength + " chars");
+                report.AppendLine("template_ui_right=" + btnExpandPrompt.Right +
+                                  " row_width=" + btnExpandPrompt.Parent.Width);
+                using (MediaToolsDialog tools = new MediaToolsDialog(Paths.Generated, null))
+                {
+                    tools.CreateControl();
+                    report.AppendLine("media_tools_controls=" + tools.Controls.Count);
+                }
             }
             catch (Exception ex)
             {
@@ -2538,6 +2867,40 @@ namespace AIMusicGenerator
                             " duration=" + audioStream.TotalTime.TotalSeconds.ToString("F2");
             DisposeAudio();
             return result;
+        }
+
+        internal string AutoVideoTest(string path)
+        {
+            string output = Path.ChangeExtension(path, ".mp4");
+            try
+            {
+                if (File.Exists(output)) File.Delete(output);
+            }
+            catch (Exception ex)
+            {
+                return "delete_failed " + ex.Message;
+            }
+            chkAutoVideo.Checked = true;
+            QueueAutoVideo(path);
+            DateTime deadline = DateTime.Now.AddMinutes(5);
+            while (DateTime.Now < deadline)
+            {
+                if (File.Exists(output))
+                {
+                    try
+                    {
+                        using (FileStream stream = File.Open(output, FileMode.Open, FileAccess.Read, FileShare.None))
+                        {
+                            return "ok output=" + output + " bytes=" + stream.Length;
+                        }
+                    }
+                    catch (IOException)
+                    {
+                    }
+                }
+                System.Threading.Thread.Sleep(200);
+            }
+            return "timeout output=" + output;
         }
 
         internal string StyleReport()
@@ -2664,7 +3027,16 @@ namespace AIMusicGenerator
             }
             if (telegramProcess != null && !telegramProcess.HasExited)
             {
-                try { telegramProcess.Kill(); } catch (Exception) { }
+                try
+                {
+                    Process.Start(new ProcessStartInfo("taskkill",
+                        "/PID " + telegramProcess.Id + " /T /F")
+                    {
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    });
+                }
+                catch (Exception) { }
             }
             SdCoverClient.Stop();
             DisposeAudio();

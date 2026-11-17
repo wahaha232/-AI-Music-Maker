@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -40,6 +41,21 @@ namespace AIMusicGenerator
         public static string Backend
         {
             get { return Path.Combine(Workspace, "AI_Music", "app", "generate_backend.py"); }
+        }
+
+        public static string VideoTool
+        {
+            get { return Path.Combine(Workspace, "AI_Music", "scripts", "music_to_video.py"); }
+        }
+
+        public static string AudioEditTool
+        {
+            get { return Path.Combine(Workspace, "AI_Music", "scripts", "audio_edit.py"); }
+        }
+
+        public static string FfmpegExe
+        {
+            get { return Path.Combine(Workspace, "AI_Music", "tools", "ffmpeg", "bin", "ffmpeg.exe"); }
         }
 
         public static string Generated
@@ -112,6 +128,45 @@ namespace AIMusicGenerator
         {
             return CreatePythonStartInfo(
                 "-u " + Quote(Backend) + " --config " + Quote(configPath), false);
+        }
+
+        public static ProcessStartInfo BuildVideoStartInfo(string audioPath, string imagePath)
+        {
+            string arguments = "-u " + Quote(VideoTool) + " " + Quote(audioPath);
+            if (!string.IsNullOrEmpty(imagePath)) arguments += " --image " + Quote(imagePath);
+            return CreatePythonStartInfo(arguments, false);
+        }
+
+        public static ProcessStartInfo BuildAudioFadeStartInfo(string inputPath,
+            double fadeIn, double fadeOut, string outputPath)
+        {
+            string arguments = "-u " + Quote(AudioEditTool) + " fade " + Quote(inputPath) +
+                " --fade-in " + fadeIn.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) +
+                " --fade-out " + fadeOut.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) +
+                " --out " + Quote(outputPath) + " --overwrite";
+            return CreatePythonStartInfo(arguments, false);
+        }
+
+        public static ProcessStartInfo BuildAudioMergeStartInfo(IEnumerable<string> inputs,
+            string outputPath)
+        {
+            StringBuilder arguments = new StringBuilder();
+            arguments.Append("-u ").Append(Quote(AudioEditTool)).Append(" merge");
+            foreach (string input in inputs)
+                arguments.Append(" ").Append(Quote(input));
+            arguments.Append(" --out ").Append(Quote(outputPath)).Append(" --overwrite");
+            return CreatePythonStartInfo(arguments.ToString(), false);
+        }
+
+        public static ProcessStartInfo BuildAudioNormalizeStartInfo(IEnumerable<string> inputs,
+            string outputDir)
+        {
+            StringBuilder arguments = new StringBuilder();
+            arguments.Append("-u ").Append(Quote(AudioEditTool)).Append(" normalize");
+            foreach (string input in inputs)
+                arguments.Append(" ").Append(Quote(input));
+            arguments.Append(" --outdir ").Append(Quote(outputDir)).Append(" --overwrite");
+            return CreatePythonStartInfo(arguments.ToString(), false);
         }
 
         public static ProcessStartInfo BuildDaemonStartInfo(string offloadMode)
