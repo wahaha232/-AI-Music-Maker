@@ -277,7 +277,12 @@ namespace AIMusicGenerator
             SelectCombo(comboKey, template.Key);
             SelectCombo(comboSignature, template.Signature);
             chkInstrumental.Checked = template.Instrumental;
-            txtLyrics.Text = template.Instrumental ? "[Instrumental]" : txtLyrics.Text;
+            if (template.Lyrics != null && template.Lyrics.Length > 0)
+                txtLyrics.Text = template.Lyrics;
+            else
+                txtLyrics.Text = template.Instrumental ? "[Instrumental]" : txtLyrics.Text;
+            if (template.Language != null && template.Language.Length > 0)
+                SelectCombo(comboLanguage, template.Language);
             AppendLog("=== 已套用風格模板: " + template.Name + " ===");
             SetStatus("已套用模板: " + template.Name);
         }

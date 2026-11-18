@@ -10,9 +10,17 @@ namespace AIMusicGenerator
         public string Key;
         public string Signature;
         public bool Instrumental;
+        public string Lyrics;
+        public string Language;
 
         public StyleTemplate(string name, string caption, int bpm, string key,
             string signature, bool instrumental)
+            : this(name, caption, bpm, key, signature, instrumental, null, null)
+        {
+        }
+
+        public StyleTemplate(string name, string caption, int bpm, string key,
+            string signature, bool instrumental, string lyrics, string language)
         {
             Name = name;
             Caption = caption;
@@ -20,6 +28,8 @@ namespace AIMusicGenerator
             Key = key;
             Signature = signature;
             Instrumental = instrumental;
+            Lyrics = lyrics;
+            Language = language;
         }
 
         public override string ToString()
@@ -91,7 +101,25 @@ namespace AIMusicGenerator
                 "Instrumental mellow hip hop, lazy swung drums, warm sample-like keys, " +
                 "deep sub bass, vinyl dust, sparse melodic loop, " +
                 "relaxed confident late-night mood, no vocals",
-                86, "F Minor", "4", true)
+                86, "F Minor", "4", true),
+            new StyleTemplate(
+                "英文男聲流行",
+                "Modern pop ballad, warm male tenor vocal, acoustic guitar, soft piano, " +
+                "subtle strings, clear English diction, emotional and intimate, " +
+                "30-second hook, radio-friendly mix",
+                84, "C Major", "4", false,
+                "[Verse]\r\nI keep the city in my pocket tonight\n" +
+                "Every streetlight hums a quiet line\n" +
+                "[Chorus]\r\nStay with me until the morning comes\n" +
+                "We can let the silence sing for us",
+                "en"),
+            new StyleTemplate(
+                "中文女聲抒情",
+                "抒情流行曲，溫柔女中音主唱，鋼琴與弦樂，中文咬字清晰，情緒細膩，副歌溫暖有力",
+                76, "A Minor", "4", false,
+                "[Verse]\r\n城市的光落在窗前\n我把心事寫成詩篇\n" +
+                "[Chorus]\r\n願你聽見我的聲音\n在夜裡陪你到天明",
+                "zh")
         };
     }
 }

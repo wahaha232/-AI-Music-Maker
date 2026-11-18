@@ -311,3 +311,31 @@ Commit：`d7a0ce0`
 - 生成結果：兩首皆成功，歌詞與 `vocal_language` 有送入模型，無 OOM；總耗時約 8.5 分鐘（含模型載入）。
 - 品質評估：本機沒有語音辨識套件，無法自動判斷咬字；需人工試聽 A/B。
 - 30 分鐘長曲測試：第 6 段 CUDA OOM，前 5 段成功；長曲流程尚未修復。
+
+## 第 11 批（長曲 OOM 修正、人聲模板）
+
+| 項目 | 修改檔案 | 狀態 | 驗證證據 |
+|---|---|---|---|
+| 長曲 OOM | `scripts/longform_generate.py`、`app/generate_backend.py` | 通過 | 30 分鐘 11/11 段成功，無 OOM；合併 `longform_30min_v2.mp3` 為 30:00.00、48 kHz、320 kbps |
+| 長曲分段策略 | `scripts/longform_generate.py`、`scripts/telegram_bot.py` | 通過 | 預設 chunk 180 秒、crossfade 5 秒、每 3 段重啟 backend；每段種子遞增（12345→12355），避免各段完全相同 |
+| 長曲 backend 解譯器 | `scripts/longform_generate.py` | 通過 | 改用 `AI_Music.venv\Scripts\python.exe`；原本用系統 python 會 `ModuleNotFoundError: loguru`，exit 1 |
+| VRAM 診斷 | `app/generate_backend.py` | 通過 | 每段後輸出 `[gpu] after track N VRAM free`（實測 10.45–10.99 GB） |
+| 人聲模板 | `app/src/StyleTemplates.cs`、`app/src/MainForm.cs` | 通過（UI selftest） | 新增「英文男聲流行」「中文女聲抒情」，含歌詞骨架與語言；`style_templates=12`、`template_apply` 正常 |
+| 單元測試 | `tests/test_longform.py` | 通過 | 分批與種子遞增 6 項測試；`build.ps1` 共 21 tests OK |
+
+### 長曲 OOM 修正內容
+
+- `generate_backend.py` 匯入階段設定 `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`，
+  降低連續生成造成的 VRAM 碎片。
+- `longform_generate.py` 每 `--chunks-per-process`（預設 3）段就重新啟動 backend，
+  以新程序取得乾淨的 CUDA allocator；`0` 表示全部同一程序（舊行為）。
+- 每段 seed = 基礎 seed + 段序，修正原本所有段落共用同一 seed 的問題。
+- `--python` 可指定 backend 解譯器，未指定時優先用 `AI_Music.venv`。
+
+### 30 分鐘實測
+
+- 指令：`longform_generate.py --duration 1800 --chunk 180 --chunks-per-process 3`
+- 4 批（3+3+3+2 段），每批重新載入模型約 6–7 分鐘；總耗時約 47 分鐘（GPU 同時有 Folding@home）。
+- 輸出：`G:\AIMUSIC\AI_Music\generated\longform_30min\longform_30min_v2.mp3`（72,001,964 bytes）
+- 11 個分段保留在 `longform_30min\longform_k6v2w3cp\batch_01..04`，可檢查接縫。
+- `.youtube.json` 已產生（private、30.0 分鐘、11 段、5 秒 crossfade）。

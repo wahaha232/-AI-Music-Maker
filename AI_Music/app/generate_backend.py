@@ -24,6 +24,8 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
 from gpu_lock import GpuBusy, GpuLockError, acquire
 
 APP_DIR = Path(__file__).resolve().parent
@@ -575,6 +577,14 @@ def run_album(album_path: Path, gpu_wait: float = 0.0) -> int:
                 message = f"{type(exc).__name__}: {exc}"
                 _emit("error", f"album track {index} failed: {message}")
                 invalid.append({"index": index, "title": title, "error": message})
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    free_b, total_b = torch.cuda.mem_get_info()
+                    _emit("gpu", f"after track {index} VRAM free "
+                                 f"{free_b / 1024**3:.2f}/{total_b / 1024**3:.2f} GB")
+            except Exception:
+                pass
     finally:
         write_meta()
         _emit("albumdone", str(album_json))

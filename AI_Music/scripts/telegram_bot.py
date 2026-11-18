@@ -452,14 +452,15 @@ def run_longform_job(token: str, chat_id: int, prompt: str,
     current.update(running=True, prompt="longform: " + prompt, started=time.time(),
                    process=None, cancel=False)
     send(token, chat_id,
-         f"開始長曲分段：{format_duration(duration)}，每段約 4 分鐘、5 秒交叉淡化。")
+         f"開始長曲分段：{format_duration(duration)}，每段約 3 分鐘、5 秒交叉淡化。")
     log_path = job_dir / "run.log"
     try:
         with open(log_path, "w", encoding="utf-8") as log_handle:
             process = subprocess.Popen(
                 [sys.executable, "-u", str(LONGFORM_TOOL),
                  "--config", str(config_path), "--duration", str(duration),
-                 "--chunk", "240", "--crossfade", "5", "--out", str(output),
+                 "--chunk", "180", "--crossfade", "5", "--chunks-per-process", "3",
+                 "--out", str(output),
                  "--gpu-wait", "60"],
                 stdout=log_handle, stderr=subprocess.STDOUT,
             )

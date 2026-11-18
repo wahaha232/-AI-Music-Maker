@@ -22,15 +22,30 @@ def parse_args() -> argparse.Namespace:
                         help="base config JSON, same format as generate_backend")
     parser.add_argument("--duration", type=float,
                         help="target seconds; defaults to config duration")
-    parser.add_argument("--chunk", type=float, default=240.0,
-                        help="seconds per chunk (default 240)")
+    parser.add_argument("--chunk", type=float, default=180.0,
+                        help="seconds per chunk (default 180)")
     parser.add_argument("--crossfade", type=float, default=5.0,
                         help="crossfade seconds (default 5)")
+    parser.add_argument("--chunks-per-process", type=int, default=3,
+                        help="chunks generated per backend process; "
+                             "0 keeps one process for everything (default 3)")
     parser.add_argument("--out", type=Path, help="final MP3 path")
     parser.add_argument("--keep-chunks", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--gpu-wait", type=float, default=60.0)
+    parser.add_argument("--python", help="interpreter for the backend "
+                                         "(default: AI_Music\\.venv if present)")
     return parser.parse_args()
+
+
+def backend_python(explicit: str | None) -> str:
+    if explicit:
+        return explicit
+    for candidate in (BASE.parent / "AI_Music.venv" / "Scripts" / "python.exe",
+                      BASE / ".venv" / "Scripts" / "python.exe"):
+        if candidate.is_file():
+            return str(candidate)
+    return sys.executable
 
 
 def build_album(base: dict, target: float, chunk: float, crossfade: float,
@@ -46,6 +61,7 @@ def build_album(base: dict, target: float, chunk: float, crossfade: float,
     if not caption:
         raise ValueError("config 缺少 caption")
     tracks = []
+    seed = int(base.get("seed") if base.get("seed") is not None else -1)
     for index in range(1, count + 1):
         if index == 1:
             prompt = caption + ", intro, establish the theme, seamless continuation"
@@ -53,11 +69,14 @@ def build_album(base: dict, target: float, chunk: float, crossfade: float,
             prompt = caption + ", outro, resolve and fade to a close"
         else:
             prompt = caption + ", seamless continuation, no intro, no outro, same groove"
-        tracks.append({
+        track = {
             "title": f"Part {index:02d}",
             "prompt": prompt,
             "duration": chunk,
-        })
+        }
+        if seed >= 0:
+            track["seed"] = seed + index - 1
+        tracks.append(track)
     shared = dict(base)
     shared["duration"] = chunk
     shared["fade_in_duration"] = 0
@@ -129,6 +148,57 @@ def write_metadata(output: Path, base: dict, target: float, count: int,
         json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def split_batches(album: dict, per_process: int) -> list[list[dict]]:
+    tracks = list(album.get("tracks") or [])
+    if per_process <= 0 or per_process >= len(tracks):
+        return [tracks]
+    return [tracks[start:start + per_process]
+            for start in range(0, len(tracks), per_process)]
+
+
+def generate(album: dict, batches: list[list[dict]], work_dir: Path,
+             gpu_wait: float, dry_run: bool, python: str | None = None) -> list[Path]:
+    chunks: list[Path] = []
+    for number, group in enumerate(batches, 1):
+        batch_dir = work_dir / f"batch_{number:02d}"
+        batch_dir.mkdir(parents=True, exist_ok=True)
+        batch_album = dict(album)
+        batch_album["tracks"] = group
+        batch_album["output_dir"] = str(batch_dir)
+        album_path = batch_dir / "album_input.json"
+        album_path.write_text(json.dumps(batch_album, ensure_ascii=False, indent=2),
+                              encoding="utf-8")
+        label = f"batch {number}/{len(batches)} tracks={len(group)}"
+        if dry_run:
+            print(f"[dry-run] {label} -> {album_path}")
+            continue
+        print(f"[longform] {label}")
+        album_out = batch_dir / "album.json"
+        try:
+            album_out.unlink()
+        except OSError:
+            pass
+        result = subprocess.run([python or backend_python(None), "-u", str(BACKEND),
+                                 "--album", str(album_path),
+                                 "--gpu-wait", str(gpu_wait)])
+        produced: list[Path] = []
+        if album_out.is_file():
+            meta = json.loads(album_out.read_text(encoding="utf-8"))
+            produced = [Path(track["file"]) for track in meta.get("tracks", [])
+                        if Path(track.get("file", "")).is_file()]
+            failed = meta.get("invalid") or []
+            if failed:
+                detail = ", ".join(f"#{item.get('index')} {item.get('error')}"
+                                   for item in failed)
+                raise RuntimeError(f"[error] {label} failed: {detail}")
+        if result.returncode != 0:
+            raise RuntimeError(f"[error] {label} backend exit={result.returncode}")
+        if len(produced) != len(group):
+            raise RuntimeError(f"[error] {label} produced {len(produced)}/{len(group)}")
+        chunks.extend(produced)
+    return chunks
+
+
 def main() -> int:
     args = parse_args()
     if not args.config.is_file():
@@ -145,31 +215,13 @@ def main() -> int:
     work_dir = Path(tempfile.mkdtemp(prefix="longform_", dir=str(out_dir)))
     try:
         album, count = build_album(base, target, args.chunk, args.crossfade, work_dir)
-        width = max(2, len(str(count)))
-        album_path = work_dir / "album_input.json"
-        album_path.write_text(json.dumps(album, ensure_ascii=False, indent=2),
-                              encoding="utf-8")
-        print(f"[longform] target={target:.0f}s chunks={count} chunk={args.chunk:.0f}s")
+        batches = split_batches(album, args.chunks_per_process)
+        print(f"[longform] target={target:.0f}s chunks={count} chunk={args.chunk:.0f}s "
+              f"batches={len(batches)}")
+        chunks = generate(album, batches, work_dir, args.gpu_wait, args.dry_run,
+                          backend_python(args.python))
         if args.dry_run:
-            print(f"[dry-run] album={album_path}")
             return 0
-        command = [sys.executable, "-u", str(BACKEND), "--album", str(album_path),
-                   "--gpu-wait", str(args.gpu_wait)]
-        print("[longform] generating chunks; model stays loaded...")
-        result = subprocess.run(command)
-        if result.returncode != 0:
-            print(f"[error] backend exit={result.returncode}")
-            return result.returncode
-        album_out = work_dir / "album.json"
-        if not album_out.is_file():
-            print("[error] backend did not write album.json")
-            return 1
-        meta = json.loads(album_out.read_text(encoding="utf-8"))
-        chunks = [Path(track["file"]) for track in meta.get("tracks", [])
-                  if Path(track.get("file", "")).is_file()]
-        if len(chunks) != count:
-            print(f"[error] expected {count} chunks, got {len(chunks)}")
-            return 1
         output = args.out or (out_dir / f"longform_{stamp}.mp3")
         fade_in = float(base.get("fade_in_duration") or 0)
         fade_out = float(base.get("fade_out_duration") or 0)
@@ -187,12 +239,10 @@ def main() -> int:
                     path.unlink()
                 except OSError:
                     pass
-            try:
-                album_out.unlink()
-                album_path.unlink()
-            except OSError:
-                pass
         return 0
+    except RuntimeError as exc:
+        print(str(exc))
+        return 1
     finally:
         if args.keep_chunks:
             print(f"[chunks] kept in {work_dir}")
