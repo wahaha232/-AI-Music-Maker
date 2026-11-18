@@ -302,3 +302,12 @@ Commit：`d7a0ce0`
 - `/longform <提示詞>` 需先 `/duration` 設定超過 5 分鐘。
 - 每段 240 秒、crossfade 5 秒，使用 album 模式讓模型只載入一次。
 - Telegram Bot API 單檔上限 50 MB，120 分鐘長曲無法直接傳送；檔案仍留在本機輸出資料夾。
+
+## 第 10 批（人聲 30 秒 A/B 測試）
+
+- 英文男聲：`G:\AIMUSIC\AI_Music\generated\vocal_ab_20261118\01_EN_Male_20261118_080734_seed777.mp3`（30.00s、480,812 bytes）
+- 中文女聲：`G:\AIMUSIC\AI_Music\generated\vocal_ab_20261118\02_ZH_Female_20261118_080804_seed777.mp3`（30.00s、480,812 bytes）
+- A/B 合併試聽：`G:\AIMUSIC\AI_Music\generated\vocal_ab_20261118\vocal_AB_30s.mp3`（60.00s）
+- 生成結果：兩首皆成功，歌詞與 `vocal_language` 有送入模型，無 OOM；總耗時約 8.5 分鐘（含模型載入）。
+- 品質評估：本機沒有語音辨識套件，無法自動判斷咬字；需人工試聽 A/B。
+- 30 分鐘長曲測試：第 6 段 CUDA OOM，前 5 段成功；長曲流程尚未修復。
