@@ -339,3 +339,23 @@ Commit：`d7a0ce0`
 - 輸出：`G:\AIMUSIC\AI_Music\generated\longform_30min\longform_30min_v2.mp3`（72,001,964 bytes）
 - 11 個分段保留在 `longform_30min\longform_k6v2w3cp\batch_01..04`，可檢查接縫。
 - `.youtube.json` 已產生（private、30.0 分鐘、11 段、5 秒 crossfade）。
+
+## 第 12 批（批次 SD 封面實機驗證）
+
+| 項目 | 修改檔案 | 狀態 | 驗證證據 |
+|---|---|---|---|
+| 批次每首 SD 封面 | `app/src/MainForm.cs`（測試條件與失敗狀態） | 通過（實機） | 2 首 10 秒批次：`ace_20261118_212232_...`、`ace_20261118_212344_...` 各自產生 `.cover.png`（295,130／273,966 bytes）、寫入封面的 MP3、`.mp4`（344,711／350,495 bytes）與 `.youtube.json` |
+| SD 模型需求 | - | 已知限制 | 批次封面分支要求 `sd_model` 非空；未選模型時只會完成批次、不產生封面。設定 `sd_model=v1-5-pruned-emaonly` 後正常 |
+| UI 測試判斷 | `app/src/MainForm.cs` | 調整 | `--ui-test-batch` 改為等待 `批次 SD 封面完成`；逾時由 15 分鐘放寬到 30 分鐘；封面失敗會設為 `批次 SD 封面失敗，改用預設封面` |
+
+### 實測流程
+
+1. 設定 `duration=10`、`sd_enabled=true`、`sd_model=v1-5-pruned-emaonly`，執行 `AIMusicGenerator.exe --ui-test-batch`。
+2. 21:15 啟動 daemon，21:22–21:23 完成 2 首 10 秒音檔。
+3. SD WebUI 於 21:23:52 就緒，21:32–21:33 依序完成兩首封面、標籤與影片。
+4. 兩首封面皆由 SD 產生（檔案大小不同），影片使用各自封面。
+
+### 未解釋現象
+
+- 本輪結束後 `ui_test_result.txt` 未更新（仍為 21:05 舊內容），Windows 事件記錄沒有 AIMusicGenerator 崩潰；封面與影片輸出皆完整。顯示為測試工具回報問題，功能本身已由檔案直接驗證。
+- SD WebUI 啟動到可用約 8 分鐘（GPU 同時有 Folding@home），實際批次封面總耗時約 19 分鐘。

@@ -1247,6 +1247,7 @@ namespace AIMusicGenerator
                 catch (Exception ex)
                 {
                     AppendLog("批次 SD 封面失敗，使用預設封面: " + ex.Message);
+                    PostUi(delegate() { SetStatus("批次 SD 封面失敗，改用預設封面"); });
                     foreach (string target in targets)
                     {
                         string file = target;
@@ -2526,8 +2527,14 @@ namespace AIMusicGenerator
                 {
                     if (uiTestBatch)
                     {
-                        if (lblStatus.Text.Contains("批次完成")) { FinishUiTest(0); return; }
-                        if (uiTestTicks > 900 || lblStatus.Text.Contains("失敗")) { FinishUiTest(2); return; }
+                        string uiStatus = lblStatus.Text;
+                        if (uiStatus.Contains("批次完成 ") || uiStatus.Contains("批次完成：") ||
+                            uiStatus.Contains("批次 SD 封面完成"))
+                        {
+                            FinishUiTest(0);
+                            return;
+                        }
+                        if (uiTestTicks > 1800 || uiStatus.Contains("失敗")) { FinishUiTest(2); return; }
                         return;
                     }
                     if (lblStatus.Text.Contains("完成:"))
