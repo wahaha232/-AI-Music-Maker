@@ -21,12 +21,17 @@ namespace AIMusicGenerator
         private readonly ToolTip toolTip = new ToolTip();
         private double savedSplitRatio = 0.5;
         private readonly SegmentedControl editorTabs =
-            new SegmentedControl(new string[] { "提示詞", "歌詞" }, new string[] { "wand-sparkles", "music" });
+            new SegmentedControl(new string[] { "提示詞", "歌詞", "封面", "影片" },
+                new string[] { "wand-sparkles", "music", "image", "video" });
         private CardPanel editorCard;
         private InputHost promptHost;
         private InputHost lyricsHost;
+        private InputHost coverHost;
+        private InputHost videoHost;
         private const string PromptHint = "描述曲風、樂器與氛圍（英文效果較佳）";
         private const string LyricsHint = "純音樂保留 [Instrumental] 即可";
+        private const string CoverHint = "SD 封面提示詞；留空則依歌曲自動產生";
+        private const string VideoHint = "影片關鍵字：ambient／kenburns／waveform／blur／cover";
         private bool splitApplied;
 
         private static int S(int value) { return Dpi.S(value); }
@@ -96,6 +101,16 @@ namespace AIMusicGenerator
             txtLyrics.DetectUrls = false;
             txtLyrics.ScrollBars = RichTextBoxScrollBars.Vertical;
             txtLyrics.Font = ThemeManager.EditorFont;
+
+            txtCover.WordWrap = true;
+            txtCover.DetectUrls = false;
+            txtCover.ScrollBars = RichTextBoxScrollBars.Vertical;
+            txtCover.Font = ThemeManager.EditorFont;
+
+            txtVideo.WordWrap = true;
+            txtVideo.DetectUrls = false;
+            txtVideo.ScrollBars = RichTextBoxScrollBars.Vertical;
+            txtVideo.Font = ThemeManager.EditorFont;
 
             numBpm.Minimum = 30;
             numBpm.Maximum = 300;
@@ -207,7 +222,7 @@ namespace AIMusicGenerator
             lblStatus.AutoEllipsis = true;
             lblStatus.Tag = "title";
             lblStatus.Font = ThemeManager.HeadingFont;
-            toolTip.SetToolTip(editorTabs, "切換編輯提示詞或歌詞");
+            toolTip.SetToolTip(editorTabs, "切換音樂提示詞、歌詞、封面提示詞、影片提示詞");
 
             lblTime.Text = "00:00 / 00:00";
             lblTime.Font = ThemeManager.MonoFont;
@@ -372,7 +387,13 @@ namespace AIMusicGenerator
             editors.Margin = Padding.Empty;
             promptHost = UiBuild.Host(txtCaption, Dpi.S(12, 10, 6, 8));
             lyricsHost = UiBuild.Host(txtLyrics, Dpi.S(12, 10, 6, 8));
+            coverHost = UiBuild.Host(txtCover, Dpi.S(12, 10, 6, 8));
+            videoHost = UiBuild.Host(txtVideo, Dpi.S(12, 10, 6, 8));
             lyricsHost.Visible = false;
+            coverHost.Visible = false;
+            videoHost.Visible = false;
+            editors.Controls.Add(videoHost);
+            editors.Controls.Add(coverHost);
             editors.Controls.Add(lyricsHost);
             editors.Controls.Add(promptHost);
             editorCard.Controls.Add(editors);
@@ -609,16 +630,28 @@ namespace AIMusicGenerator
 
         private void OnEditorTabChanged(object sender, EventArgs e)
         {
-            bool lyrics = editorTabs.SelectedIndex == 1;
+            int tab = editorTabs.SelectedIndex;
+            bool lyrics = tab == 1;
+            bool cover = tab == 2;
+            bool video = tab == 3;
+            promptHost.Visible = tab == 0;
             lyricsHost.Visible = lyrics;
-            promptHost.Visible = !lyrics;
-            editorCard.Subtitle = lyrics ? LyricsHint : PromptHint;
-            // template / batch / expand only act on the prompt
-            chkBatch.Visible = !lyrics;
-            comboStyleTemplate.Visible = !lyrics;
-            btnApplyTemplate.Visible = !lyrics;
-            btnExpandPrompt.Visible = !lyrics;
-            (lyrics ? (Control)txtLyrics : txtCaption).Focus();
+            coverHost.Visible = cover;
+            videoHost.Visible = video;
+            if (lyrics) editorCard.Subtitle = LyricsHint;
+            else if (cover) editorCard.Subtitle = CoverHint;
+            else if (video) editorCard.Subtitle = VideoHint;
+            else editorCard.Subtitle = PromptHint;
+            // template / batch / expand only act on the music prompt
+            chkBatch.Visible = tab == 0;
+            comboStyleTemplate.Visible = tab == 0;
+            btnApplyTemplate.Visible = tab == 0;
+            btnExpandPrompt.Visible = tab == 0;
+            Control target = tab == 1 ? (Control)txtLyrics
+                : tab == 2 ? (Control)txtCover
+                : tab == 3 ? (Control)txtVideo
+                : txtCaption;
+            target.Focus();
         }
 
         // ------------------------------------------------------------------ theme & window chrome
@@ -799,6 +832,10 @@ namespace AIMusicGenerator
                 OnApplyStyleTemplate(this, EventArgs.Empty);
                 report.AppendLine("template_apply=" + numBpm.Value + "|" +
                                   Convert.ToString(comboKey.SelectedItem) + "|" + txtCaption.TextLength + " chars");
+                report.AppendLine("editor_tabs=" + editorTabs.Count +
+                                  " cover_chars=" + txtCover.TextLength +
+                                  " video_style=" + VideoStyleFromPrompt("ambient rain") +
+                                  " cover_override=" + (CoverPromptFor("missing.mp3").Length > 0));
                 report.AppendLine("auto_video=" + chkAutoVideo.Text + " checked=" + chkAutoVideo.Checked);
                 using (MediaToolsDialog tools = new MediaToolsDialog(Paths.Generated, null))
                 {

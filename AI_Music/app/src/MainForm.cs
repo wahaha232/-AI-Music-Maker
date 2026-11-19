@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -18,6 +18,8 @@ namespace AIMusicGenerator
     {
         private readonly RichTextBox txtCaption = new RichTextBox();
         private readonly RichTextBox txtLyrics = new RichTextBox();
+        private readonly RichTextBox txtCover = new RichTextBox();
+        private readonly RichTextBox txtVideo = new RichTextBox();
         private readonly TextBox txtOutDir = new TextBox();
         private readonly TextBox txtSeed = new TextBox();
         private readonly TextBox txtLog = new TextBox();
@@ -42,8 +44,7 @@ namespace AIMusicGenerator
         private readonly ToggleSwitch chkThinking = new ToggleSwitch();
         private readonly ToggleSwitch chkKeepModel = new ToggleSwitch();
         private readonly ToggleSwitch chkAutoVideo = new ToggleSwitch();
-        private readonly Queue<KeyValuePair<string, string>> videoQueue =
-            new Queue<KeyValuePair<string, string>>();
+        private readonly Queue<VideoJob> videoQueue = new Queue<VideoJob>();
         private readonly object videoGate = new object();
         private bool videoRunning;
         private readonly ModernButton btnGenerate = new ModernButton();
@@ -508,9 +509,15 @@ namespace AIMusicGenerator
                 return;
             }
             string image = ResolveVideoCover(path);
+            string style = VideoStyleFromPrompt(txtVideo.Text);
+            VideoJob job = new VideoJob();
+            job.Audio = path;
+            job.Image = image;
+            job.Style = style;
+            job.Fps = VideoFpsForStyle(style);
             lock (videoGate)
             {
-                videoQueue.Enqueue(new KeyValuePair<string, string>(path, image));
+                videoQueue.Enqueue(job);
                 if (videoRunning) return;
                 videoRunning = true;
             }
@@ -523,7 +530,7 @@ namespace AIMusicGenerator
         {
             while (true)
             {
-                KeyValuePair<string, string> job;
+                VideoJob job;
                 lock (videoGate)
                 {
                     if (videoQueue.Count == 0)
@@ -533,7 +540,7 @@ namespace AIMusicGenerator
                     }
                     job = videoQueue.Dequeue();
                 }
-                string path = job.Key;
+                string path = job.Audio;
                 try
                 {
                     string output = Path.ChangeExtension(path, ".mp4");
@@ -560,7 +567,8 @@ namespace AIMusicGenerator
                         else
                             SetStatus("轉換影片中...");
                     });
-                    int code = VideoRunner.Run(path, job.Value, delegate(string line)
+                    int code = VideoRunner.Run(path, job.Image, job.Style, job.Fps,
+                        delegate(string line)
                     {
                         AppendLog(line);
                     });
@@ -641,7 +649,7 @@ namespace AIMusicGenerator
                         AppendLog("SD 切換模型: " + sdModel);
                         SdCoverClient.SelectModel(sdUrl, sdModel);
                     }
-                    string prompt = BuildCoverPrompt(target);
+                    string prompt = CoverPromptFor(target);
                     AppendLog("SD 產生封面...");
                     SdCoverClient.GenerateCover(sdUrl, prompt,
                         "text, watermark, logo, letters, blurry, low quality, deformed",
@@ -710,6 +718,39 @@ namespace AIMusicGenerator
             if (caption.Length > 500) caption = caption.Substring(0, 500);
             return (caption + ", album cover art, square composition, cinematic lighting, "
                     + "warm elegant atmosphere, no text, no watermark, detailed, high quality").Trim();
+        }
+
+        private string CoverPromptFor(string audioPath)
+        {
+            string custom = txtCover.Text.Trim();
+            return custom.Length > 0 ? custom : BuildCoverPrompt(audioPath);
+        }
+
+        private static string VideoStyleFromPrompt(string text)
+        {
+            string value = (text ?? "").ToLowerInvariant();
+            if (value.Contains("kenburns") || value.Contains("推近") || value.Contains("推拉") ||
+                value.Contains("zoom")) return "kenburns";
+            if (value.Contains("waveform") || value.Contains("波形")) return "waveform";
+            if (value.Contains("ambient") || value.Contains("氛圍") || value.Contains("微動") ||
+                value.Contains("rain") || value.Contains("雨")) return "ambient";
+            if (value.Contains("blur") || value.Contains("模糊")) return "blur";
+            if (value.Contains("static") || value.Contains("靜態") || value.Contains("cover") ||
+                value.Contains("封面")) return "cover";
+            return "ambient";
+        }
+
+        private static int VideoFpsForStyle(string style)
+        {
+            return style == "kenburns" || style == "ambient" ? 24 : 5;
+        }
+
+        private sealed class VideoJob
+        {
+            public string Audio;
+            public string Image;
+            public string Style;
+            public int Fps;
         }
 
         private void TryTagOutput(string path, string coverOverride = null)
@@ -1216,7 +1257,7 @@ namespace AIMusicGenerator
                         bool hasCover = false;
                         try
                         {
-                            string coverPrompt = BuildCoverPrompt(target);
+                            string coverPrompt = CoverPromptFor(target);
                             SdCoverClient.GenerateCover(sdUrl, coverPrompt,
                                 "text, watermark, logo, letters, blurry, low quality, deformed",
                                 sdSize, sdSize, sdSteps, cover);
@@ -2246,6 +2287,8 @@ namespace AIMusicGenerator
             }
             txtCaption.Text = GetString(s, "caption", DefaultCaption);
             txtLyrics.Text = GetString(s, "lyrics", "[Instrumental]");
+            txtCover.Text = GetString(s, "cover_prompt", "");
+            txtVideo.Text = GetString(s, "video_prompt", "");
             txtOutDir.Text = GetString(s, "output_dir", Paths.Generated);
             txtSeed.Text = GetString(s, "seed", "");
             ThemeManager.SetTheme(GetBool(s, "theme_dark", true));
@@ -2293,6 +2336,8 @@ namespace AIMusicGenerator
                 Dictionary<string, object> s = new Dictionary<string, object>();
                 s["caption"] = txtCaption.Text;
                 s["lyrics"] = txtLyrics.Text;
+                s["cover_prompt"] = txtCover.Text;
+                s["video_prompt"] = txtVideo.Text;
                 s["output_dir"] = txtOutDir.Text;
                 s["seed"] = txtSeed.Text;
                 s["theme_dark"] = ThemeManager.Dark;

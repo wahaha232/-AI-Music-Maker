@@ -8,6 +8,12 @@ namespace AIMusicGenerator
     {
         public static int Run(string audioPath, string imagePath, Action<string> log)
         {
+            return Run(audioPath, imagePath, "blur", 5, log);
+        }
+
+        public static int Run(string audioPath, string imagePath, string style, int fps,
+            Action<string> log)
+        {
             if (!File.Exists(Paths.VideoTool))
             {
                 log("=== 找不到影片轉換腳本: " + Paths.VideoTool + " ===");
@@ -22,7 +28,7 @@ namespace AIMusicGenerator
             {
                 using (Process process = new Process())
                 {
-                    process.StartInfo = Paths.BuildVideoStartInfo(audioPath, imagePath);
+                    process.StartInfo = Paths.BuildVideoStartInfo(audioPath, imagePath, style, fps);
                     process.OutputDataReceived += delegate(object sender, DataReceivedEventArgs e)
                     {
                         if (e.Data != null) log(e.Data);

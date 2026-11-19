@@ -359,3 +359,20 @@ Commit：`d7a0ce0`
 
 - 本輪結束後 `ui_test_result.txt` 未更新（仍為 21:05 舊內容），Windows 事件記錄沒有 AIMusicGenerator 崩潰；封面與影片輸出皆完整。顯示為測試工具回報問題，功能本身已由檔案直接驗證。
 - SD WebUI 啟動到可用約 8 分鐘（GPU 同時有 Folding@home），實際批次封面總耗時約 19 分鐘。
+
+## 第 13 批（三個提示詞欄位：音樂／封面／影片）
+
+| 項目 | 修改檔案 | 狀態 | 驗證證據 |
+|---|---|---|---|
+| 三個提示詞輸入 | `app/src/MainForm.cs`、`app/src/MainForm.Layout.cs`、`app/src/UiControls.cs` | 通過 | 左側編輯區頁籤由 2 個增為 4 個（提示詞／歌詞／封面／影片），版面配置未變；`ui_selftest` 回報 `editor_tabs=4` |
+| 封面提示詞 | `MainForm.cs` | 通過 | 有填值時覆蓋自動提示詞，套用於單首與批次 SD 封面（`CoverPromptFor`）；留空維持原自動產生 |
+| 影片提示詞 | `MainForm.cs`、`app/src/Paths.cs`、`app/src/VideoRunner.cs`、`scripts/music_to_video.py` | 通過 | 關鍵字對應 `ambient／kenburns／waveform／blur／cover`；動態風格自動使用 24 fps |
+| 動態濾鏡 | `scripts/music_to_video.py` | 通過 | 新增 `kenburns`（zoompan 慢推）與 `ambient`（慢推＋grain＋vignette）；實測 8 秒 640×360 輸出為 24 fps、H.264 |
+| 設定保存 | `MainForm.cs` | 通過 | `cover_prompt`、`video_prompt` 寫入 settings.json；重啟後 `cover_chars=33` 正確載入 |
+| 測試 | `tests/test_video_styles.py` | 通過 | 4 項濾鏡測試；全套 25 tests OK |
+
+### 設計決定
+
+- 影片端沒有本地 AI 影片模型，提示詞以關鍵字對應 ffmpeg 風格，不假裝是文字生成影片。
+- 沒有 `[封面]` 提示時仍沿用歌曲 metadata 自動組提示詞。
+- 說明文件與程式碼 bundle 由 `scripts/make_code_bundle.py` 產生。

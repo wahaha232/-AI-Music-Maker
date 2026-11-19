@@ -137,8 +137,16 @@ namespace AIMusicGenerator
 
         public static ProcessStartInfo BuildVideoStartInfo(string audioPath, string imagePath)
         {
+            return BuildVideoStartInfo(audioPath, imagePath, null, 0);
+        }
+
+        public static ProcessStartInfo BuildVideoStartInfo(string audioPath, string imagePath,
+            string style, int fps)
+        {
             string arguments = "-u " + Quote(VideoTool) + " " + Quote(audioPath);
             if (!string.IsNullOrEmpty(imagePath)) arguments += " --image " + Quote(imagePath);
+            if (!string.IsNullOrEmpty(style)) arguments += " --style " + style;
+            if (fps > 0) arguments += " --fps " + fps.ToString(System.Globalization.CultureInfo.InvariantCulture);
             return CreatePythonStartInfo(arguments, false);
         }
 

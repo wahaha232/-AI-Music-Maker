@@ -753,6 +753,11 @@ namespace AIMusicGenerator
 
         public event EventHandler SelectedIndexChanged;
 
+        public int Count
+        {
+            get { return items.Length; }
+        }
+
         public SegmentedControl(string[] items, string[] icons)
         {
             this.items = items;

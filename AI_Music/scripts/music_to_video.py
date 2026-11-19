@@ -41,7 +41,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--recursive", action="store_true", help="also scan subfolders of --input-dir")
     parser.add_argument("--outdir", type=Path, help="output folder (default: next to each audio file)")
     parser.add_argument("--image", type=Path, help="cover image for every file (default: auto-detect)")
-    parser.add_argument("--style", choices=("blur", "cover", "waveform"), default="blur")
+    parser.add_argument("--style", choices=("blur", "cover", "waveform", "kenburns", "ambient"),
+                        default="blur")
     parser.add_argument("--size", type=parse_size, default=(1920, 1080), help="WxH, default 1920x1080")
     parser.add_argument("--fps", type=int, default=5)
     parser.add_argument("--crf", type=int, default=23)
@@ -102,12 +103,30 @@ def find_cover(audio: Path, explicit: Path | None, default: Path) -> Path | None
     return default if default.is_file() else None
 
 
-def build_filter(style: str, width: int, height: int) -> str:
+def motion_filter(width: int, height: int, fps: int, ambient: bool) -> str:
+    scale_width, scale_height = width * 2, height * 2
+    zoom = f"min(1+0.02*on/({fps}*60),1.05)"
+    extra = ",noise=alls=3:allf=t+u,vignette=PI/5" if ambient else ""
+    return (
+        f"scale={scale_width}:{scale_height}:force_original_aspect_ratio=increase,"
+        f"crop={scale_width}:{scale_height},"
+        f"zoompan=z='{zoom}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+        f"d=1:s={width}x{height}:fps={fps},setsar=1{extra},format=yuv420p[v]"
+    )
+
+
+def build_filter(style: str, width: int, height: int, fps: int = 5) -> str:
     if style == "cover":
         return (
             f"scale={width}:{height}:force_original_aspect_ratio=increase,"
             f"crop={width}:{height},setsar=1,format=yuv420p[v]"
         )
+
+    if style == "kenburns":
+        return motion_filter(width, height, fps, False)
+
+    if style == "ambient":
+        return motion_filter(width, height, fps, True)
 
     if style == "waveform":
         size = max(16, int(height * 0.62) // 2 * 2)
@@ -181,7 +200,7 @@ def render(
     wave_image: Path | None,
 ) -> int:
     width, height = size
-    filter_graph = build_filter(style, width, height)
+    filter_graph = build_filter(style, width, height, fps)
     command = [
         str(ffmpeg),
         "-hide_banner",
